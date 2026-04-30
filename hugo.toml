@@ -1,32 +1,35 @@
-baseURL = 'https://zahanzo.github.io/'
-languageCode = 'pt-br'
-title = 'Zahanzo | Engenharia & Baixo Nível'
-theme = 'PaperMod'
-
 [params]
     env = 'production'
-    title = 'Zahanzo'
-    description = 'Estudante de ADS e entusiasta de sistemas de baixo nível.'
-    author = '0xRobert Souza Lages'
+    title = 'Robert Souza Lages'
+    description = 'Engenharia de Software & Sistemas de Baixo Nível'
+    author = 'Robert Souza Lages'
     defaultTheme = 'dark'
     ShowCodeCopyButtons = true
 
     [params.homeInfoParams]
-        Title = 'Robert Souza Lages'
-        Content = 'Residente em Pelotas e estudante de ADS. Focado em C, C++, Assembly e no desenvolvimento do framework L.I.A. Atuando na intersecção entre a operação industrial e a engenharia de software.'
+        Title = "Robert Souza Lages"
+        Content = "Graduando em Análise e Desenvolvimento de Sistemas pela UniSenac. Desenvolvedor focado em C, C++, Assembly e criador do framework L.I.A. Atuando na intersecção entre a operação industrial e a engenharia de software em Pelotas, RS."
 
     [[params.socialIcons]]
-        name = 'github'
-        url = 'https://github.com/zahanzo'
+        name = "linkedin"
+        url = "https://www.linkedin.com/in/0xrobert/"
+    [[params.socialIcons]]
+        name = "github"
+        url = "https://github.com/zahanzo"
 
 [menu]
     [[menu.main]]
-        identifier = 'posts'
-        name = 'Posts Técnicos'
-        url = '/posts/'
+        identifier = "posts"
+        name = "Posts"
+        url = "/posts"
         weight = 10
     [[menu.main]]
-        identifier = 'projetos'
-        name = 'Projetos (L.I.A.)'
-        url = '/tags/projetos/'
+        identifier = "categories"
+        name = "Categorias"
+        url = "/categories"
         weight = 20
+    [[menu.main]]
+        identifier = "curriculo"
+        name = "Currículo"
+        url = "/curriculo"
+        weight = 30
