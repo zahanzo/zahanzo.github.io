@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Posts | Robert Souza Lages</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
+    <style>.page-isolada { padding-top: 120px; min-height: 100vh; }</style>
+</head>
+<body>
+
+    <!-- ========================================== -->
+    <!-- NAVEGAÇÃO FIXA (Fica fora do app-root)     -->
+    <!-- ========================================== -->
+    <nav class="navbar">
+        <div class="logo">0xRobert<span>_</span></div>
+        <ul class="nav-links">
+            <li><a href="index.html">Sobre</a></li>
+            <li><a href="curriculo.html">Currículo</a></li>
+            <li><a href="projetos.html">Projetos</a></li>
+            <li><a href="posts.html" style="color: var(--accent);">Posts</a></li>
+        </ul>
+        <div class="hamburger">
+            <i class='bx bx-menu'></i>
+        </div>
+    </nav>
+
+    <!-- ========================================== -->
+    <!-- ZONA DE INJEÇÃO (Tudo aqui muda via JS)    -->
+    <!-- ========================================== -->
+    <main id="app-root">
+        <section class="section page-isolada">
+            <h2 class="section-title">Artigos Técnicos</h2>
+            
+            <div class="category-filters">
+                <button class="filter-btn active" data-filter="all">Todos</button>
+                <button class="filter-btn" data-filter="low-level">Baixo Nível</button>
+                <button class="filter-btn" data-filter="ia">L.I.A. & IA</button>
+                <button class="filter-btn" data-filter="engenharia">Engenharia</button>
+            </div>
+
+            <!-- O JavaScript injeta os cards do posts.json aqui -->
+            <div class="posts-grid" id="posts-container"></div>
+        </section>
+    </main>
+
+    <!-- ========================================== -->
+    <!-- FOOTER E SCRIPTS FIXOS                     -->
+    <!-- ========================================== -->
+    <footer>
+        <p>&copy; 2026 Robert Souza Lages.</p>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Título do Projeto - Documentação</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    
+    <!-- Botão de Voltar Integrado -->
+    <a href="../projetos.html" class="btn-voltar">
+        &larr; Voltar para Projetos
+    </a>
+
+    <header>
+        <h1>NOME DO PROJETO</h1>
+        <p class="subtitle">Breve subtítulo ou descrição em uma linha da documentação.</p>
+        <div class="header-meta">
+            <span class="meta-item">Tag 1 (Ex: C++)</span>
+            <span class="meta-item">Tag 2 (Ex: Rebuild)</span>
+            <span class="meta-item">Tag 3 (Ex: 2026)</span>
+        </div>
+    </header>
+
+    <div class="container">
+        
+        <!-- SEÇÃO PADRÃO COM TEXTO -->
+        <section>
+            <h2>Visão Geral</h2>
+            <p>
+                Aqui você escreve a introdução do seu projeto. Seja um motor de moto, um estudo em Assembly, 
+                ou uma nova feature do seu framework L.I.A.. O texto tem suporte a <strong>negrito</strong> e adaptação 
+                responsiva.
+            </p>
+
+            <!-- EXEMPLO DE STATUS/NÚMEROS ANIMADOS -->
+            <div class="stats">
+                <div class="stat">
+                    <span class="stat-value">100</span>
+                    <span class="stat-label">Métrica 1</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value">5</span>
+                    <span class="stat-label">Métrica 2</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- SEÇÃO COM CARDS E BLOCOS DE CÓDIGO -->
+        <section>
+            <h2>Módulos ou Partes</h2>
+            
+            <div class="card">
+                <h3>Nome do Arquivo ou Componente</h3>
+                <p>Explicação detalhada sobre essa parte específica do projeto.</p>
+                
+                <!-- O data-lang dita a label que aparece no canto superior direito do bloco de código -->
+                <div class="code-block" data-lang="assembly">
+<pre><span class="code-comment">; Exemplo de comentário em Assembly</span>
+<span class="code-keyword">section</span> .data
+    msg db <span class="code-string">'Hello World'</span>, 0xa
+
+<span class="code-keyword">section</span> .text
+    <span class="code-keyword">global</span> _start
+
+_start:
+    <span class="code-function">mov</span> eax, 4</pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- SEÇÃO COM GRID DE FUNCIONALIDADES / PASSOS -->
+        <section>
+            <h2>Funcionalidades ou Passos da Montagem</h2>
+            
+            <div class="features-grid">
+                <div class="feature">
+                    <h4>Ponto de Destaque 1</h4>
+                    <p>Descrição curta e direta sobre esse ponto.</p>
+                </div>
+                <div class="feature">
+                    <h4>Ponto de Destaque 2</h4>
+                    <p>Descrição curta e direta sobre esse ponto.</p>
+                </div>
+                <div class="feature">
+                    <h4>Ponto de Destaque 3</h4>
+                    <p>Descrição curta e direta sobre esse ponto.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- SEÇÃO COM AS LABELS DE TECNOLOGIA -->
+        <section>
+            <h2>Stack de Tecnologias</h2>
+            
+            <h3>Ferramentas Utilizadas</h3>
+            <div class="tech-stack">
+                <span class="tech-badge">Tecnologia 1</span>
+                <span class="tech-badge">Tecnologia 2</span>
+                <span class="tech-badge">Tecnologia 3</span>
+            </div>
+        </section>
+
+    </div>
+
+    <footer>
+        <p>
+            Documentação Técnica<br>
+            by 0xRobert Souza Lages © 2026 &copy; 2026<br>
+            <a href="https://github.com/zahanzo/NOME-DO-PROJETO" target="_blank">GitHub Repository</a>
+        </p>
+    </footer>
+
+    <!-- SCRIPTS -->
+    <script src="script.js"></script>
+</body>
+</html>

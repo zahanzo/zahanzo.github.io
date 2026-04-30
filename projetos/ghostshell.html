@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GhostShell - Documentação Técnica</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    
+    <a href="../projetos.html" class="btn-voltar">
+        &larr; Voltar para Projetos
+    </a>
+
+    <header>
+        <h1>GhostShell</h1>
+        <p class="subtitle">Advanced Evasion & Persistence Toolkit</p>
+        <div class="header-meta">
+            <span class="meta-item">C++20</span>
+            <span class="meta-item">Windows API (Win32/COM)</span>
+            <span class="meta-item">Red Team Research</span>
+        </div>
+    </header>
+
+    <div class="container">
+        
+        <section>
+            <h2>Visão Geral</h2>
+            <p>
+                O GhostShell é uma Prova de Conceito (PoC) desenvolvida em <strong>C++20</strong> para pesquisa em segurança ofensiva. O projeto demonstra a criação de um <em>Reverse Shell</em> altamente furtivo e <em>fileless</em>, focado na execução em memória, evasão de sandboxes dinâmicas e persistência com elevação de privilégios.
+            </p>
+            <p>
+                Este toolkit foi projetado estritamente para fins educacionais, dissecando a interação em baixo nível com o sistema operacional Windows para burlar heurísticas estáticas e dinâmicas.
+            </p>
+
+            <div class="stats">
+                <div class="stat">
+                    <span class="stat-value">6</span>
+                    <span class="stat-label">Fases de Execução</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value">3</span>
+                    <span class="stat-label">Técnicas Anti-Sandbox</span>
+                </div>
+            </div>
+        </section>
+
+        <section>
+            <h2>Arquitetura e Módulos Core</h2>
+            
+            <div class="card">
+                <h3>Persistência via COM API (Task Scheduler)</h3>
+                <p>
+                    Em vez de modificar chaves de registro altamente monitoradas (como a <code>Run</code>), o GhostShell estabelece comunicação direta com a API COM do <strong>Task Scheduler 2.0</strong>. O sistema inicializa via <code>CoInitializeEx</code> e cria uma tarefa oculta ativada no logon (<code>TASK_TRIGGER_LOGON</code>), solicitando <code>TASK_RUNLEVEL_HIGHEST</code> para garantir a sobrevivência a reboots com privilégios máximos.
+                </p>
+                
+                <div class="code-block" data-lang="cpp">
+<pre><span class="code-comment">// Elevação de privilégios na criação da tarefa</span>
+IPrincipalPtr pPrincipal;
+hr = pTask-&gt;get_Principal(&amp;pPrincipal);
+<span class="code-keyword">if</span> (SUCCEEDED(hr)) {
+    pPrincipal-&gt;put_LogonType(TASK_LOGON_INTERACTIVE_TOKEN);
+    <span class="code-comment">// Solicita os maiores privilégios disponíveis no host</span>
+    pPrincipal-&gt;put_RunLevel(TASK_RUNLEVEL_HIGHEST); 
+}</pre>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Ofuscação em Tempo de Compilação</h3>
+                <p>
+                    Para proteger o endereço do servidor de Comando e Controle (C2) contra extração estática (ferramentas como <code>strings.exe</code> ou regras YARA), o projeto utiliza um template <code>constexpr</code> personalizado. A URL é criptografada via XOR durante a compilação e descriptografada apenas em memória durante a execução.
+                </p>
+                
+                <div class="code-block" data-lang="cpp">
+<pre><span class="code-comment">// Criptografia XOR avaliada em tempo de compilação</span>
+<span class="code-keyword">template</span> &lt;size_t N&gt;
+<span class="code-keyword">class</span> ObfuscatedString {
+<span class="code-keyword">public</span>:
+    <span class="code-keyword">static</span> <span class="code-keyword">constexpr</span> <span class="code-keyword">char</span> key = 0x7A; 
+    std::array&lt;<span class="code-keyword">char</span>, N&gt; encrypted_data;
+
+    <span class="code-keyword">constexpr</span> ObfuscatedString(<span class="code-keyword">const</span> <span class="code-keyword">char</span>* str) : encrypted_data{} {
+        <span class="code-keyword">for</span> (size_t i = 0; i &lt; N; ++i) {
+            encrypted_data[i] = str[i] ^ key;
+        }
+    }
+    <span class="code-comment">// ...</span>
+};</pre>
+                </div>
+            </div>
+        </section>
+
+        <section>
+            <h2>A Cadeia de Execução (Kill Chain)</h2>
+            
+            <div class="features-grid">
+                <div class="feature">
+                    <h4>Obscurecimento de Interface</h4>
+                    <p>Ocultação imediata do contexto de execução. O binário consulta a janela ativa via <code>GetConsoleWindow()</code> e força a chamada <code>ShowWindow(hWnd, SW_HIDE)</code>, garantindo inicialização silenciosa.</p>
+                </div>
+                <div class="feature">
+                    <h4>Evasão Ambiental (Anti-Sandbox)</h4>
+                    <p>Inspeção do host para detectar virtualização. Verifica recursos limitados (como RAM &lt; 4GB e single core) e enumera o sistema de arquivos buscando artefatos de hypervisors conhecidos (ex: <code>VBoxMouse.sys</code>).</p>
+                </div>
+                <div class="feature">
+                    <h4>Evasão Temporal</h4>
+                    <p>Execução de um loop matemático determinístico e intensivo para CPU, projetado para esgotar os limites de tempo de monitoramento das sandboxes dinâmicas antes de liberar o payload.</p>
+                </div>
+                <div class="feature">
+                    <h4>Fileless C2 Retrieval</h4>
+                    <p>O IP e a porta alvo são extraídos dinamicamente usando a biblioteca <code>WinInet</code>. Os dados de conexão são armazenados apenas na memória RAM (fileless), sem tocar o disco.</p>
+                </div>
+                <div class="feature">
+                    <h4>Handle Hijacking (Reverse Shell)</h4>
+                    <p>Uso de <code>WSASocketA</code> e <code>CreateProcessA</code> para manipular a estrutura <code>STARTUPINFO</code>. Os handles de Input, Output e Error do <code>cmd.exe</code> são redirecionados diretamente para o socket aberto da conexão, dispensando dependências externas.</p>
+                </div>
+            </div>
+        </section>
+
+        <section>
+            <h2>Stack e Compilação</h2>
+            
+            <h3>Flags do Compilador (MinGW-w64)</h3>
+            <p>
+                A compilação do binário é feita de forma estática para evitar a criação de dependências externas e evadir heurísticas, utilizando as seguintes diretivas:
+            </p>
+            <div class="tech-stack">
+                <span class="tech-badge">-std=c++20</span>
+                <span class="tech-badge">-static</span>
+                <span class="tech-badge">-mwindows</span>
+                <span class="tech-badge">-s (Strip Symbols)</span>
+                <span class="tech-badge">-lws2_32</span>
+                <span class="tech-badge">-lwininet</span>
+                <span class="tech-badge">-lole32</span>
+                <span class="tech-badge">-loleaut32</span>
+            </div>
+        </section>
+
+    </div>
+
+    <footer>
+        <p>
+            Documentação Técnica<br>
+            by 0xRobert Souza Lages &copy; 2026<br>
+            <a href="https://github.com/zahanzo/GhostShell" target="_blank">GitHub Repository</a>
+        </p>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>

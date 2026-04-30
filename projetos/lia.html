@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>L.I.A - Construindo um Assistente Inteligente Local</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <a href="../projetos.html" style="position: absolute; top: 20px; left: 20px; color: var(--accent-cyan); text-decoration: none; font-family: 'JetBrains Mono', monospace; display: inline-flex; align-items: center; gap: 8px; z-index: 100; transition: 0.3s;" onmouseover="this.style.color='var(--accent-green)'" onmouseout="this.style.color='var(--accent-cyan)'">
+        &larr; Voltar para Projetos
+    </a>
+    <header>
+        <h1>L.I.A</h1>
+        <p class="subtitle">Local Intelligent Assistant — Arquitetura e Implementação</p>
+        <div class="header-meta">
+            <span class="meta-item">Python 3.10+</span>
+            <span class="meta-item">FastAPI + SQLite</span>
+            <span class="meta-item">Multi-Provider LLM</span>
+            <span class="meta-item">Open Source</span>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Introdução -->
+        <section>
+            <h2>Visão Geral</h2>
+            <p>
+                L.I.A (Local Intelligent Assistant) é um assistente de IA modular e extensível que roda localmente, 
+                oferecendo controle total sobre dados e processamento. O sistema foi projetado com uma arquitetura 
+                multimodal que integra visão computacional, processamento de voz, memória semântica de longo prazo 
+                e um sistema de plugins extensível.
+            </p>
+            <p>
+                Diferente de assistentes cloud-based, L.I.A prioriza privacidade, customização e controle total 
+                do usuário sobre o comportamento e dados do sistema. Todo o processamento pode ocorrer localmente, 
+                com suporte opcional a provedores de IA externos quando necessário.
+            </p>
+
+            <div class="stats">
+                <div class="stat">
+                    <span class="stat-value">15+</span>
+                    <span class="stat-label">Módulos Core</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value">4</span>
+                    <span class="stat-label">Provedores LLM</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value">∞</span>
+                    <span class="stat-label">Plugins Customizáveis</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Arquitetura -->
+        <section>
+            <h2>Arquitetura do Sistema</h2>
+            <p>
+                A arquitetura de L.I.A foi construída seguindo princípios de modularidade e separação de responsabilidades. 
+                Cada componente é independente e se comunica através de interfaces bem definidas.
+            </p>
+
+            <div class="architecture">
+                <div class="arch-block">
+                    <div class="arch-icon">🎤</div>
+                    <h4>EARS (STT)</h4>
+                    <p>Speech-to-Text com OpenAI Whisper e Vosk. Suporta modelos locais e processamento em tempo real.</p>
+                </div>
+                <div class="arch-block">
+                    <div class="arch-icon">🔊</div>
+                    <h4>MOUTH (TTS)</h4>
+                    <p>Text-to-Speech com Edge TTS e ElevenLabs. Geração de áudio assíncrona com fila de processamento.</p>
+                </div>
+                <div class="arch-block">
+                    <div class="arch-icon">👁️</div>
+                    <h4>EYES (Vision)</h4>
+                    <p>Análise de tela e visão computacional com modelos multimodais. Monitoramento de contexto visual.</p>
+                </div>
+                <div class="arch-block">
+                    <div class="arch-icon">🧠</div>
+                    <h4>MEMORY (RAG)</h4>
+                    <p>Memória semântica de longo prazo usando embeddings e busca vetorial com cosine similarity.</p>
+                </div>
+                <div class="arch-block">
+                    <div class="arch-icon">🔧</div>
+                    <h4>MCP Tools</h4>
+                    <p>Sistema de plugins extensível via Model Context Protocol. Suporte a ferramentas Python síncronas e assíncronas.</p>
+                </div>
+                <div class="arch-block">
+                    <div class="arch-icon">🌐</div>
+                    <h4>WebUI</h4>
+                    <p>Interface web moderna com FastAPI. Dashboard de controle, gerenciamento de plugins e histórico.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Componentes Principais -->
+        <section>
+            <h2>Componentes Principais</h2>
+
+            <div class="card">
+                <h3>main.py — Loop Principal</h3>
+                <p>
+                    O coração do sistema. Gerencia o loop assíncrono principal, processa mensagens de entrada, 
+                    orquestra chamadas de LLM e coordena todos os módulos. Implementa classificação de intenção 
+                    para otimizar o roteamento de requisições.
+                </p>
+                <div class="code-block" data-lang="python">
+<pre><span class="code-comment"># Classificação inteligente de intenção</span>
+<span class="code-keyword">async def</span> <span class="code-function">classify_intent</span>(message: str) -> str:
+    <span class="code-string">"""
+    Classifica a mensagem em categorias:
+    - vision: análise de tela/imagem
+    - code: programação
+    - general: conversação geral
+    """</span>
+    <span class="code-comment"># Usa modelo pequeno e rápido para classificação</span>
+    <span class="code-keyword">if</span> config.CURRENT_MODE.startswith(<span class="code-string">"local"</span>):
+        r = <span class="code-keyword">await</span> asyncio.to_thread(
+            config.client_local.chat.completions.create,
+            model=local_model, messages=ctx
+        )
+    <span class="code-keyword">return</span> r.choices[<span class="code-string">0</span>].message.content.strip()</pre>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>memory.py — Memória Semântica RAG</h3>
+                <p>
+                    Sistema de memória de longo prazo usando sentence-transformers para gerar embeddings multilíngues. 
+                    Busca semântica baseada em cosine similarity para recuperar contexto relevante. Implementa decay 
+                    automático para manutenção periódica.
+                </p>
+                <div class="code-block" data-lang="python">
+<pre><span class="code-comment"># Geração de embeddings multilíngues</span>
+<span class="code-keyword">from</span> sentence_transformers <span class="code-keyword">import</span> SentenceTransformer
+
+_embedding_model = SentenceTransformer(
+    <span class="code-string">"paraphrase-multilingual-MiniLM-L12-v2"</span>
+)
+
+<span class="code-keyword">def</span> <span class="code-function">search_memories</span>(query: str, top_k: int = <span class="code-string">5</span>):
+    <span class="code-string">"""Busca semântica com cosine similarity"""</span>
+    query_vec = _generate_embedding(query)
+    
+    <span class="code-comment"># Calcula similaridade com todas as memórias</span>
+    results = []
+    <span class="code-keyword">for</span> memory <span class="code-keyword">in</span> all_memories:
+        similarity = _cosine_similarity(query_vec, memory.embedding)
+        results.append((memory, similarity))
+    
+    <span class="code-keyword">return</span> sorted(results, key=<span class="code-keyword">lambda</span> x: x[<span class="code-string">1</span>], reverse=<span class="code-keyword">True</span>)[:top_k]</pre>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>server_mcp.py — Sistema de Ferramentas</h3>
+                <p>
+                    Implementa o Model Context Protocol (MCP) para exposição de ferramentas à IA. Sistema de "Masters" 
+                    permite agrupar ferramentas relacionadas e ativá-las contextualmente. Suporta execução de código 
+                    Python síncrono e assíncrono.
+                </p>
+                <div class="code-block" data-lang="python">
+<pre><span class="code-comment"># Sistema de Masters - Ferramentas Contextuais</span>
+<span class="code-keyword">def</span> <span class="code-function">get_active_tools</span>():
+    <span class="code-string">"""Retorna ferramentas globais + ferramentas do master ativo"""</span>
+    active_master = get_active_master()
+    
+    <span class="code-comment"># Ferramentas GLOBAIS (sempre disponíveis)</span>
+    global_tools = run_db(
+        <span class="code-string">"SELECT * FROM mcp_tools WHERE parent_id IS NULL"</span>
+    )
+    
+    <span class="code-keyword">if</span> active_master:
+        <span class="code-comment"># Ferramentas CONTEXTUAIS (só quando master ativo)</span>
+        contextual_tools = run_db(
+            <span class="code-string">"SELECT * FROM mcp_tools WHERE parent_id = ?"</span>,
+            (active_master,)
+        )
+        <span class="code-keyword">return</span> global_tools + contextual_tools
+    
+    <span class="code-keyword">return</span> global_tools</pre>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>webui.py — Interface Web FastAPI</h3>
+                <p>
+                    Interface web moderna construída com FastAPI. Oferece dashboard completo para gerenciamento 
+                    de configurações, histórico de conversas, plugins, memórias e personas de roleplay. 
+                    Comunicação em tempo real via arquivos JSON.
+                </p>
+                <div class="code-block" data-lang="python">
+<pre><span class="code-comment"># API REST com FastAPI</span>
+app = FastAPI(title=<span class="code-string">"L.I.A Panel"</span>)
+
+<span class="code-decorator">@app.post</span>(<span class="code-string">"/api/enviar"</span>)
+<span class="code-keyword">async def</span> <span class="code-function">send_message</span>(msg: Message):
+    <span class="code-string">"""Recebe mensagem e arquivos do frontend"""</span>
+    payload = {
+        <span class="code-string">"texto"</span>: msg.texto,
+        <span class="code-string">"arquivos"</span>: [
+            {<span class="code-string">"url"</span>: f.url, <span class="code-string">"type"</span>: f.tipo, <span class="code-string">"name"</span>: f.nome}
+            <span class="code-keyword">for</span> f <span class="code-keyword">in</span> msg.arquivos
+        ]
+    }
+    
+    <span class="code-comment"># Escreve para processamento assíncrono</span>
+    <span class="code-keyword">with</span> open(input_file, <span class="code-string">"w"</span>) <span class="code-keyword">as</span> f:
+        json.dump(payload, f)
+    
+    <span class="code-keyword">return</span> {<span class="code-string">"status"</span>: <span class="code-string">"ok"</span>}</pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Funcionalidades -->
+        <section>
+            <h2>Funcionalidades Avançadas</h2>
+
+            <div class="features-grid">
+                <div class="feature">
+                    <h4>Multi-Provider LLM</h4>
+                    <p>
+                        Suporte a múltiplos provedores de IA: OpenAI, Groq, OpenRouter e modelos locais via Ollama. 
+                        Troca dinâmica entre provedores sem reinicialização.
+                    </p>
+                </div>
+
+                <div class="feature">
+                    <h4>Sistema de Plugins</h4>
+                    <p>
+                        Arquitetura extensível via MCP. Crie ferramentas customizadas em Python com execução 
+                        síncrona ou assíncrona. Sistema de "Masters" para agrupamento contextual.
+                    </p>
+                </div>
+
+                <div class="feature">
+                    <h4>Memória RAG</h4>
+                    <p>
+                        Memória semântica de longo prazo com embeddings multilíngues. Extração automática de 
+                        fatos das conversas e busca vetorial para contexto relevante.
+                    </p>
+                </div>
+
+                <div class="feature">
+                    <h4>Visão Computacional</h4>
+                    <p>
+                        Análise de tela com modelos multimodais. Monitoramento de background opcional para 
+                        detecção automática de mudanças de contexto visual.
+                    </p>
+                </div>
+
+                <div class="feature">
+                    <h4>STT & TTS</h4>
+                    <p>
+                        Speech-to-Text com Whisper (local e cloud). Text-to-Speech com Edge TTS e ElevenLabs. 
+                        Sincronização labial opcional para avatares.
+                    </p>
+                </div>
+
+                <div class="feature">
+                    <h4>Roleplay & Personas</h4>
+                    <p>
+                        Sistema completo de personas e cenários de roleplay. Suporte a contextos NSFW com 
+                        ativação/desativação dinâmica sem limpar histórico.
+                    </p>
+                </div>
+
+                <div class="feature">
+                    <h4>Modos de Operação</h4>
+                    <p>
+                        Focus Mode para eliminar interrupções. Do Not Disturb com detecção automática de reuniões. 
+                        Watchdog para proatividade periódica.
+                    </p>
+                </div>
+
+                <div class="feature">
+                    <h4>Internacionalização</h4>
+                    <p>
+                        Suporte completo a múltiplos idiomas (PT-BR, EN-US). Sistema i18n robusto para interface 
+                        e respostas do assistente.
+                    </p>
+                </div>
+
+                <div class="feature">
+                    <h4>Hot Reload</h4>
+                    <p>
+                        Sistema de recarga de configurações em tempo real. Modificações aplicadas sem 
+                        reinicialização do servidor ou perda de estado.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Stack Tecnológica -->
+        <section>
+            <h2>Stack Tecnológica</h2>
+
+            <h3>Backend</h3>
+            <div class="tech-stack">
+                <span class="tech-badge">Python 3.10+</span>
+                <span class="tech-badge">FastAPI</span>
+                <span class="tech-badge">AsyncIO</span>
+                <span class="tech-badge">SQLite</span>
+                <span class="tech-badge">Model Context Protocol</span>
+                <span class="tech-badge">OpenAI API</span>
+                <span class="tech-badge">Groq API</span>
+                <span class="tech-badge">Ollama</span>
+            </div>
+
+            <h3>IA & ML</h3>
+            <div class="tech-stack">
+                <span class="tech-badge">OpenAI Whisper</span>
+                <span class="tech-badge">Sentence Transformers</span>
+                <span class="tech-badge">Edge TTS</span>
+                <span class="tech-badge">ElevenLabs</span>
+                <span class="tech-badge">GPT-4 Vision</span>
+                <span class="tech-badge">Llama 3.2</span>
+            </div>
+
+            <h3>Frontend</h3>
+            <div class="tech-stack">
+                <span class="tech-badge">Vanilla JavaScript</span>
+                <span class="tech-badge">HTML5</span>
+                <span class="tech-badge">CSS3</span>
+                <span class="tech-badge">Jinja2 Templates</span>
+                <span class="tech-badge">REST API</span>
+            </div>
+
+            <h3>Ferramentas & Libs</h3>
+            <div class="tech-stack">
+                <span class="tech-badge">PyAutoGUI</span>
+                <span class="tech-badge">Keyboard</span>
+                <span class="tech-badge">Mouse</span>
+                <span class="tech-badge">PyGame</span>
+                <span class="tech-badge">Uvicorn</span>
+                <span class="tech-badge">Pydantic</span>
+            </div>
+        </section>
+
+        <!-- Conclusão -->
+        <section>
+            <h2>Conclusão e Próximos Passos</h2>
+            <p>
+                L.I.A representa uma abordagem moderna e modular para assistentes de IA, priorizando privacidade, 
+                controle e extensibilidade. A arquitetura baseada em componentes permite evolução contínua sem 
+                comprometer a estabilidade do sistema.
+            </p>
+            <p>
+                O sistema está em desenvolvimento ativo, com foco em melhorias de performance, novos plugins 
+                e expansão das capacidades multimodais. A comunidade é encorajada a contribuir com novos 
+                componentes, ferramentas e melhorias.
+            </p>
+
+            <div class="card">
+                <h3>Roadmap Técnico</h3>
+                <div class="features-grid">
+                    <div class="feature">
+                        <h4>Performance</h4>
+                        <p>Otimização de embeddings, cache de LLM, paralelização de tarefas</p>
+                    </div>
+                    <div class="feature">
+                        <h4>Segurança</h4>
+                        <p>Sandbox para execução de código, criptografia de dados sensíveis</p>
+                    </div>
+                    <div class="feature">
+                        <h4>Plugins</h4>
+                        <p>Marketplace de plugins, sistema de versionamento, testes automatizados</p>
+                    </div>
+                    <div class="feature">
+                        <h4>Multimodal</h4>
+                        <p>Suporte a vídeo, processamento de documentos, OCR avançado</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <footer>
+        <p>
+            L.I.A — Local Intelligent Assistant<br>
+            Built with 💚 by 0xRobert<br>
+            <a href="https://github.com/zahanzo/lia-framework" target="_blank">GitHub Repository</a>
+        </p>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>

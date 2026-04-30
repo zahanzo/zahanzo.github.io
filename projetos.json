@@ -1,0 +1,12 @@
+[
+    {
+        "title": "L.I.A. Framework",
+        "description": "Assistente Inteligente Local. Arquitetura modular integrando IA, visão computacional e servidores MCP.",
+        "url": "projetos/lia.html"
+    },
+    {
+        "title": "GhostShell",
+        "description": "Implementações e testes focados em segurança, persistência e análise de vulnerabilidades em sistemas Windows.",
+        "url": "projetos/ghostshell.html"
+    }
+]
