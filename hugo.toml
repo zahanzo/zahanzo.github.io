@@ -1,0 +1,32 @@
+baseURL = 'https://zahanzo.github.io/'
+languageCode = 'pt-br'
+title = 'Zahanzo | Engenharia & Baixo Nível'
+theme = 'PaperMod'
+
+[params]
+    env = 'production'
+    title = 'Zahanzo'
+    description = 'Estudante de ADS e entusiasta de sistemas de baixo nível.'
+    author = '0xRobert Souza Lages'
+    defaultTheme = 'dark'
+    ShowCodeCopyButtons = true
+
+    [params.homeInfoParams]
+        Title = 'Robert Souza Lages'
+        Content = 'Residente em Pelotas e estudante de ADS. Focado em C, C++, Assembly e no desenvolvimento do framework L.I.A. Atuando na intersecção entre a operação industrial e a engenharia de software.'
+
+    [[params.socialIcons]]
+        name = 'github'
+        url = 'https://github.com/zahanzo'
+
+[menu]
+    [[menu.main]]
+        identifier = 'posts'
+        name = 'Posts Técnicos'
+        url = '/posts/'
+        weight = 10
+    [[menu.main]]
+        identifier = 'projetos'
+        name = 'Projetos (L.I.A.)'
+        url = '/tags/projetos/'
+        weight = 20
