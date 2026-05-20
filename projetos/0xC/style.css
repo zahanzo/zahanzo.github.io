@@ -426,3 +426,31 @@ body {
 
     .chapter-section h1 { font-size: 1.4rem; }
 }
+
+/* Organização do cabeçalho da Sidebar */
+.sidebar-brand {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 1.5rem;
+}
+
+/* Sobrescreve a posição global do botão apenas dentro da sidebar */
+.sidebar-brand .btn-voltar {
+    position: static;
+    margin-bottom: 1.5rem;
+    align-self: flex-start; /* Impede que o botão estique na largura toda */
+}
+
+.brand-hex {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 2rem;
+    font-weight: bold;
+    color: var(--accent-cyan);
+}
+
+.brand-sub {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-secondary);
+    letter-spacing: 0.1em;
+    font-size: 0.9rem;
+}
