@@ -1,0 +1,88 @@
+<header>
+    <h1>0x01 · Estrutura do Binário e main()</h1>
+    <span class="ch-subtitle">// ELF, Entry Points, Stack Frames e Exit Codes</span>
+</header>
+
+<section>
+    <h2>O programa mínimo</h2>
+    <p>
+        Antes de qualquer Hello World, precisamos entender o que um programa <em>é</em> do ponto de vista do sistema operacional. Um binário compilado em Linux é um arquivo no formato <strong>ELF (Executable and Linkable Format)</strong>. Ele contém seções: <code>.text</code> (código), <code>.data</code> (variáveis globais inicializadas), <code>.bss</code> (globais não-inicializadas), e metadados que o kernel usa para carregar o processo na memória.
+    </p>
+
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>estrutura_minima.c</span></div>
+        <pre><code><span class="pp">#include</span> <span class="str">&lt;stdio.h&gt;</span>
+
+<span class="kw">int</span> <span class="fn">main</span>(<span class="kw">void</span>) {
+    <span class="fn">printf</span>(<span class="str">"0xC_ online.\n"</span>);
+    <span class="kw">return</span> <span class="num">0</span>;
+}</code></pre>
+    </div>
+
+    <h2>O que é a função main()?</h2>
+    <p>
+        Do ponto de vista do programador, <code>main()</code> é onde o programa começa. Do ponto de vista do sistema operacional, ela não é o verdadeiro ponto de entrada. O ELF define um símbolo chamado <code>_start</code>, que é código gerado pelo linker (da libc/crt0) responsável por:
+    </p>
+    <ol style="list-style:decimal;padding-left:1.5rem;color:var(--text-secondary);line-height:2">
+        <li>Preparar os argumentos <code>argc</code> e <code>argv</code> a partir do stack do processo</li>
+        <li>Chamar funções de inicialização da libc</li>
+        <li>Chamar a função <code>main()</code></li>
+        <li>Passar o retorno de <code>main()</code> para <code>exit()</code></li>
+    </ol>
+    <p>
+        Você pode ver isso em ação: <code>objdump -d seu_binario | grep -A 20 "_start"</code>
+    </p>
+
+    <h2>Assinaturas válidas de main()</h2>
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>main_signatures.c</span></div>
+        <pre><code><span class="cmt">/* Forma 1: sem argumentos */</span>
+<span class="kw">int</span> <span class="fn">main</span>(<span class="kw">void</span>) { <span class="kw">return</span> <span class="num">0</span>; }
+
+<span class="cmt">/* Forma 2: com argumentos de linha de comando */</span>
+<span class="kw">int</span> <span class="fn">main</span>(<span class="kw">int</span> argc, <span class="kw">char</span> *argv[]) {
+    <span class="cmt">/* argc = número de argumentos (pelo menos 1: o próprio programa) */</span>
+    <span class="cmt">/* argv = array de strings com cada argumento                      */</span>
+    <span class="fn">printf</span>(<span class="str">"Programa: %s\n"</span>, argv[<span class="num">0</span>]);
+    <span class="kw">return</span> <span class="num">0</span>;
+}</code></pre>
+    </div>
+
+    <h2>Exit Codes — A linguagem do processo</h2>
+    <p>
+        O valor retornado por <code>main()</code> é o <strong>Exit Code</strong> do processo. Ele é uma convenção entre o processo filho e o processo pai (que no terminal é o shell). O tipo é um <code>int</code>, mas o sistema operacional usa apenas os 8 bits menos significativos (<code>exit_code & 0xFF</code>), logo valores válidos são 0–255.
+    </p>
+
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>exit_codes.c</span></div>
+        <pre><code><span class="pp">#include</span> <span class="str">&lt;stdlib.h&gt;</span>  <span class="cmt">/* EXIT_SUCCESS, EXIT_FAILURE */</span>
+
+<span class="kw">int</span> <span class="fn">main</span>(<span class="kw">int</span> argc, <span class="kw">char</span> *argv[]) {
+    <span class="kw">if</span> (argc < <span class="num">2</span>) {
+        <span class="fn">fprintf</span>(stderr, <span class="str">"Uso: %s &lt;arquivo&gt;\n"</span>, argv[<span class="num">0</span>]);
+        <span class="kw">return</span> EXIT_FAILURE; <span class="cmt">/* EXIT_FAILURE == 1 */</span>
+    }
+    <span class="cmt">/* Processamento normal... */</span>
+    <span class="kw">return</span> EXIT_SUCCESS; <span class="cmt">/* EXIT_SUCCESS == 0  */</span>
+}</code></pre>
+    </div>
+
+    <p>No shell, inspecione o exit code do último processo com <code>echo $?</code>. Scripts de CI/CD usam isso para determinar se um build passou ou falhou.</p>
+
+    <div class="mem-diagram">
+        <div class="mem-row"><span class="mem-addr">Endereço Alto</span><span class="mem-sep">│</span><span class="mem-val">[ ambiente ]</span><span class="mem-label">← variáveis de ambiente</span></div>
+        <div class="mem-row"><span class="mem-addr">         ...</span><span class="mem-sep">│</span><span class="mem-val">[ argv[]   ]</span><span class="mem-label">← strings dos argumentos</span></div>
+        <div class="mem-row"><span class="mem-addr">         ...</span><span class="mem-sep">│</span><span class="mem-val">[ stack    ]</span><span class="mem-label">← cresce para baixo ↓</span></div>
+        <div class="mem-row"><span class="mem-addr">         ...</span><span class="mem-sep">│</span><span class="mem-val">[ heap     ]</span><span class="mem-label">← cresce para cima ↑</span></div>
+        <div class="mem-row"><span class="mem-addr">         ...</span><span class="mem-sep">│</span><span class="mem-val">[ .bss    ]</span><span class="mem-label">← globais não inicializadas (zeroed)</span></div>
+        <div class="mem-row"><span class="mem-addr">         ...</span><span class="mem-sep">│</span><span class="mem-val">[ .data   ]</span><span class="mem-label">← globais inicializadas</span></div>
+        <div class="mem-row"><span class="mem-addr">Endereço Baixo</span><span class="mem-sep">│</span><span class="mem-val">[ .text   ]</span><span class="mem-label">← código executável (somente leitura)</span></div>
+    </div>
+
+    <h2>Seções ELF na prática</h2>
+    <p>Compile qualquer exemplo e inspecione as seções com <code>readelf -S binario</code> ou <code>size binario</code>. O comando <code>size</code> mostra em bytes: text, data e bss — três números que resumem a anatomia do seu programa.</p>
+
+    <div class="info-box warning">
+        <p><strong>⚠ Vetor de ataque:</strong> A seção <code>.text</code> é marcada como <strong>somente leitura e executável</strong>. Se um overflow conseguir redirecionar o <em>instruction pointer</em> (RIP/EIP) para dados controláveis pelo atacante, o S.O. levanta uma exceção por violação de permissão — proteção chamada <strong>DEP/NX (No-Execute)</strong>. Mas isso só funciona se o binário foi compilado com as flags corretas.</p>
+    </div>
+</section>

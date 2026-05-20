@@ -1,0 +1,134 @@
+<header>
+    <h1>0x06 · scanf e Buffer Sanitization</h1>
+    <span class="ch-subtitle">// stdin, buffer do teclado, higienização e prevenção de loops infinitos</span>
+</header>
+
+<section>
+    <h2>O que é stdin?</h2>
+    <p>
+        <code>stdin</code> é um <strong>stream de I/O</strong> — um canal de bytes entre o processo e a entrada padrão (geralmente o teclado). Ele é <em>bufferizado por linha</em> pelo SO: quando você pressiona Enter, os bytes digitados (incluindo o <code>'\n'</code>) são enviados ao buffer do processo de uma vez.
+    </p>
+    <p>
+        A libc mantém um <strong>buffer interno</strong> para stdin. Funções como <code>scanf</code>, <code>fgets</code> e <code>getchar</code> leem desse buffer. O problema: quando <code>scanf</code> lê um inteiro e o usuário digita <code>"42\n"</code>, o scanf consome <code>42</code> mas o <code>'\n'</code> permanece no buffer — aguardando a próxima leitura.
+    </p>
+
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>scanf_basico.c</span></div>
+        <pre><code><span class="pp">#include</span> <span class="str">&lt;stdio.h&gt;</span>
+
+<span class="kw">int</span> <span class="fn">main</span>(<span class="kw">void</span>) {
+    <span class="kw">int</span> numero;
+
+    <span class="fn">printf</span>(<span class="str">"Digite um inteiro: "</span>);
+    <span class="kw">int</span> ret = <span class="fn">scanf</span>(<span class="str">"%d"</span>, &amp;numero); <span class="cmt">/* & = endereço de numero */</span>
+
+    <span class="kw">if</span> (ret != <span class="num">1</span>) {
+        <span class="fn">fprintf</span>(stderr, <span class="str">"[ERRO] Entrada inválida.\n"</span>);
+        <span class="kw">return</span> <span class="num">1</span>;
+    }
+    <span class="fn">printf</span>(<span class="str">"Você digitou: %d\n"</span>, numero);
+    <span class="kw">return</span> <span class="num">0</span>;
+}</code></pre>
+    </div>
+
+    <h2>O valor de retorno de scanf — NUNCA ignore</h2>
+    <p>
+        <code>scanf</code> retorna o número de itens convertidos com sucesso. Se o usuário digitar <code>"abc"</code> quando se espera um inteiro, scanf retorna <code>0</code> (zero conversões). Se o stream chega ao final (EOF), retorna <code>EOF</code> (-1). <strong>Ignorar esse retorno é um bug de segurança.</strong>
+    </p>
+
+    <h2>O loop infinito — o bug mais comum com scanf</h2>
+    <p>
+        Quando scanf falha em converter (ex: lê texto onde espera número), ele <strong>não consome os bytes inválidos</strong>. Eles ficam no buffer. Na próxima iteração do loop, scanf tenta novamente — e falha novamente — infinitamente.
+    </p>
+
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>loop_infinito_bug.c — CÓDIGO QUEBRADO</span></div>
+        <pre><code><span class="kw">int</span> numero;
+<span class="kw">while</span> (<span class="num">1</span>) {
+    <span class="fn">printf</span>(<span class="str">"Digite um número: "</span>);
+    <span class="fn">scanf</span>(<span class="str">"%d"</span>, &amp;numero);   <span class="cmt">/* BUG: se digitar "abc", loop infinito! */</span>
+    <span class="fn">printf</span>(<span class="str">"Recebido: %d\n"</span>, numero);
+}</code></pre>
+    </div>
+
+    <h2>Higienização correta do buffer stdin</h2>
+    <p>
+        A solução é limpar o buffer quando a entrada é inválida. A idioma padrão para isso é consumir todos os caracteres restantes no buffer até encontrar um newline ou EOF:
+    </p>
+
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>scanf_seguro.c</span></div>
+        <pre><code><span class="pp">#include</span> <span class="str">&lt;stdio.h&gt;</span>
+
+<span class="cmt">/* Limpa todos os bytes pendentes no buffer de stdin */</span>
+<span class="kw">void</span> <span class="fn">limpar_buffer</span>(<span class="kw">void</span>) {
+    <span class="kw">int</span> c;
+    <span class="kw">while</span> ((c = <span class="fn">getchar</span>()) != <span class="str">'\n'</span> &amp;&amp; c != EOF);
+}
+
+<span class="kw">int</span> <span class="fn">main</span>(<span class="kw">void</span>) {
+    <span class="kw">int</span> numero;
+    <span class="kw">int</span> valido = <span class="num">0</span>;
+
+    <span class="kw">while</span> (!valido) {
+        <span class="fn">printf</span>(<span class="str">"Digite um inteiro positivo: "</span>);
+
+        <span class="kw">if</span> (<span class="fn">scanf</span>(<span class="str">"%d"</span>, &amp;numero) != <span class="num">1</span>) {
+            <span class="fn">fprintf</span>(stderr, <span class="str">"[ERRO] Entrada não é um número.\n"</span>);
+            <span class="fn">limpar_buffer</span>(); <span class="cmt">/* descarta os bytes inválidos */</span>
+        } <span class="kw">else if</span> (numero <= <span class="num">0</span>) {
+            <span class="fn">fprintf</span>(stderr, <span class="str">"[ERRO] Número deve ser positivo.\n"</span>);
+            <span class="fn">limpar_buffer</span>(); <span class="cmt">/* descarta o '\n' restante */</span>
+        } <span class="kw">else</span> {
+            <span class="fn">limpar_buffer</span>(); <span class="cmt">/* boa prática: sempre limpa após leitura */</span>
+            valido = <span class="num">1</span>;
+        }
+    }
+
+    <span class="fn">printf</span>(<span class="str">"Número aceito: %d\n"</span>, numero);
+    <span class="kw">return</span> <span class="num">0</span>;
+}</code></pre>
+    </div>
+
+    <h2>fgets — a alternativa mais segura</h2>
+    <p>
+        Para leitura de strings, <strong>nunca use <code>scanf("%s", buf)</code></strong> sem limite de tamanho — ele não tem limite e é vulnerável a buffer overflow. Use <code>fgets</code>: ela lê no máximo <code>n-1</code> bytes e garante terminação com <code>'\0'</code>.
+    </p>
+
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>fgets_seguro.c</span></div>
+        <pre><code><span class="pp">#include</span> <span class="str">&lt;stdio.h&gt;</span>
+<span class="pp">#include</span> <span class="str">&lt;string.h&gt;</span>
+
+<span class="pp">#define MAX_NOME 64</span>
+
+<span class="kw">int</span> <span class="fn">main</span>(<span class="kw">void</span>) {
+    <span class="kw">char</span> nome[MAX_NOME];
+
+    <span class="fn">printf</span>(<span class="str">"Nome: "</span>);
+    <span class="kw">if</span> (<span class="fn">fgets</span>(nome, <span class="kw">sizeof</span>(nome), stdin) == NULL) {
+        <span class="fn">fprintf</span>(stderr, <span class="str">"Erro de leitura.\n"</span>);
+        <span class="kw">return</span> <span class="num">1</span>;
+    }
+
+    <span class="cmt">/* fgets preserva o '\n' — remove-o */</span>
+    nome[<span class="fn">strcspn</span>(nome, <span class="str">"\n"</span>)] = <span class="str">'\0'</span>;
+
+    <span class="fn">printf</span>(<span class="str">"Olá, %s!\n"</span>, nome);
+    <span class="kw">return</span> <span class="num">0</span>;
+}</code></pre>
+    </div>
+
+    <div class="info-box danger">
+        <p><strong>⚠ gets() é proibido:</strong> A função <code>gets()</code> foi removida do padrão C11. Ela não tem limite de tamanho e é garantia de buffer overflow. Qualquer código que a usa é vulnerável. Use sempre <code>fgets(buf, sizeof(buf), stdin)</code>.</p>
+    </div>
+
+    <h2>Anatomia do buffer do teclado</h2>
+    <div class="mem-diagram">
+        <div class="mem-row"><span class="mem-addr">Teclado</span><span class="mem-sep">→</span><span class="mem-val">Kernel buffer</span><span class="mem-sep">→</span><span class="mem-label">libc stdio buffer → scanf/fgets</span></div>
+        <div class="mem-row"><span class="mem-addr">Input: "42\n"</span></div>
+        <div class="mem-row"><span class="mem-addr">Buffer[0]</span><span class="mem-val">'4' (0x34)</span></div>
+        <div class="mem-row"><span class="mem-addr">Buffer[1]</span><span class="mem-val">'2' (0x32)</span></div>
+        <div class="mem-row"><span class="mem-addr">Buffer[2]</span><span class="mem-val">'\n'(0x0A)</span><span class="mem-label">← fica no buffer após scanf("%d")</span></div>
+    </div>
+</section>

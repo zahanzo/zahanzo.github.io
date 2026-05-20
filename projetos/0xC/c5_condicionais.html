@@ -1,0 +1,123 @@
+<header>
+    <h1>0x05 · Condicionais e Álgebra Booleana</h1>
+    <span class="ch-subtitle">// IF/ELSE, Switch, flags de CPU e operadores bitwise</span>
+</header>
+
+<section>
+    <h2>Como a CPU avalia condições</h2>
+    <p>
+        Em C, toda expressão condicional se reduz a um inteiro: <strong>zero é falso, qualquer valor não-zero é verdadeiro</strong>. Não existe tipo booleano nativo em C89/C90 — mas <code>&lt;stdbool.h&gt;</code> (C99+) adiciona <code>bool</code>, <code>true</code> e <code>false</code> como macros sobre <code>int</code>.
+    </p>
+    <p>
+        Quando a CPU executa uma instrução de comparação (<code>cmp</code> em x86), ela subtrai os operandos e armazena os resultados em bits especiais chamados <strong>FLAGS</strong> no registrador EFLAGS/RFLAGS: <code>ZF</code> (zero flag), <code>SF</code> (sign flag), <code>CF</code> (carry flag), <code>OF</code> (overflow flag). As instruções de salto condicional (<code>je</code>, <code>jl</code>, <code>jg</code>...) checam esses flags.
+    </p>
+
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>if_else.c</span></div>
+        <pre><code><span class="pp">#include</span> <span class="str">&lt;stdbool.h&gt;</span>
+<span class="pp">#include</span> <span class="str">&lt;stdio.h&gt;</span>
+
+<span class="kw">int</span> <span class="fn">main</span>(<span class="kw">void</span>) {
+    <span class="kw">int</span> temperatura = <span class="num">38</span>;
+
+    <span class="kw">if</span> (temperatura > <span class="num">37</span>) {
+        <span class="fn">puts</span>(<span class="str">"[ALERTA] Temperatura acima do normal."</span>);
+    } <span class="kw">else if</span> (temperatura == <span class="num">37</span>) {
+        <span class="fn">puts</span>(<span class="str">"[OK] Temperatura normal."</span>);
+    } <span class="kw">else</span> {
+        <span class="fn">puts</span>(<span class="str">"[ALERTA] Hipotermia."</span>);
+    }
+
+    <span class="cmt">/* bool do stdbool.h: macro sobre _Bool */</span>
+    <span class="kw">bool</span> alerta = (temperatura != <span class="num">37</span>);
+    <span class="fn">printf</span>(<span class="str">"alerta = %d\n"</span>, alerta); <span class="cmt">/* 1 (true) */</span>
+    <span class="kw">return</span> <span class="num">0</span>;
+}</code></pre>
+    </div>
+
+    <h2>O Assembly gerado pelo if</h2>
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">asm</span><span>x86-64 — if (temperatura &gt; 37)</span></div>
+        <pre><code>    movl    -4(%rbp), %eax     <span class="cmt">; carrega temperatura para eax</span>
+    cmpl    $37, %eax          <span class="cmt">; compara: eax - 37 (ajusta flags)</span>
+    jle     .L_else            <span class="cmt">; se ≤, pula para else (ZF ou SF≠OF)</span>
+    <span class="cmt">; corpo do if...</span>
+    jmp     .L_end
+.L_else:
+    <span class="cmt">; corpo do else...</span>
+.L_end:</code></pre>
+    </div>
+
+    <h2>Operadores Relacionais e Lógicos</h2>
+
+    <div class="mem-diagram">
+        <div class="mem-row"><span class="mem-addr">Operador</span><span class="mem-val">Significado</span><span class="mem-label">Avaliação</span></div>
+        <div class="mem-row"><span class="mem-addr">==</span><span class="mem-val">igual</span><span class="mem-label">1 se iguais, 0 se não</span></div>
+        <div class="mem-row"><span class="mem-addr">!=</span><span class="mem-val">diferente</span><span class="mem-label">1 se diferentes</span></div>
+        <div class="mem-row"><span class="mem-addr">&amp;&amp;</span><span class="mem-val">AND lógico</span><span class="mem-label">short-circuit: para no primeiro false</span></div>
+        <div class="mem-row"><span class="mem-addr">||</span><span class="mem-val">OR lógico</span><span class="mem-label">short-circuit: para no primeiro true</span></div>
+        <div class="mem-row"><span class="mem-addr">!</span><span class="mem-val">NOT lógico</span><span class="mem-label">!0 = 1, !qualquer = 0</span></div>
+    </div>
+
+    <div class="info-box warning">
+        <p><strong>⚠ Erro clássico — = vs ==:</strong> <code>if (x = 5)</code> é atribuição (sempre verdadeiro, x vira 5). <code>if (x == 5)</code> é comparação. O compilador com <code>-Wall</code> avisa sobre isso. A técnica "Yoda condition" — <code>if (5 == x)</code> — elimina o risco: <code>if (5 = x)</code> seria erro de compilação.</p>
+    </div>
+
+    <h2>Switch — tabela de saltos</h2>
+    <p>
+        O <code>switch</code> é mais eficiente que uma cadeia de <code>if/else if</code> quando os casos são inteiros densos. O compilador frequentemente gera uma <strong>jump table</strong>: um array de endereços onde o índice é o valor do switch. A seleção do caso vira uma única instrução de salto indireto — O(1) independente do número de casos.
+    </p>
+
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>switch_demo.c</span></div>
+        <pre><code><span class="kw">int</span> <span class="fn">main</span>(<span class="kw">void</span>) {
+    <span class="kw">int</span> opcode = <span class="num">0x02</span>;
+
+    <span class="kw">switch</span> (opcode) {
+        <span class="kw">case</span> <span class="num">0x00</span>:
+            <span class="fn">puts</span>(<span class="str">"NOP"</span>);
+            <span class="kw">break</span>; <span class="cmt">/* sem break → fallthrough para o próximo case! */</span>
+        <span class="kw">case</span> <span class="num">0x01</span>:
+            <span class="fn">puts</span>(<span class="str">"LOAD"</span>);
+            <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="num">0x02</span>:
+            <span class="fn">puts</span>(<span class="str">"STORE"</span>);
+            <span class="kw">break</span>;
+        <span class="kw">default</span>:
+            <span class="fn">puts</span>(<span class="str">"OPCODE INVÁLIDO"</span>);
+    }
+    <span class="kw">return</span> <span class="num">0</span>;
+}</code></pre>
+    </div>
+
+    <h2>Operadores Bitwise — manipulação direta de bits</h2>
+    <p>
+        Operadores bitwise operam bit a bit nos operandos. São fundamentais em programação de sistemas, drivers, protocolos e criptografia.
+    </p>
+
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>bitwise.c</span></div>
+        <pre><code><span class="kw">unsigned int</span> flags = <span class="num">0b00000000</span>;
+
+<span class="cmt">/* SET bit 3: usa OR com máscara */</span>
+flags |= (<span class="num">1</span> << <span class="num">3</span>);  <span class="cmt">/* flags = 0b00001000 */</span>
+
+<span class="cmt">/* CHECK bit 3: usa AND com máscara */</span>
+<span class="kw">if</span> (flags & (<span class="num">1</span> << <span class="num">3</span>)) { <span class="fn">puts</span>(<span class="str">"bit 3 está setado"</span>); }
+
+<span class="cmt">/* CLEAR bit 3: usa AND com NOT da máscara */</span>
+flags &= ~(<span class="num">1</span> << <span class="num">3</span>); <span class="cmt">/* flags = 0b00000000 */</span>
+
+<span class="cmt">/* TOGGLE bit 3: usa XOR com máscara */</span>
+flags ^= (<span class="num">1</span> << <span class="num">3</span>);  <span class="cmt">/* alterna o bit */</span>
+
+<span class="cmt">/* Divisão/Multiplicação por potência de 2 via shift */</span>
+<span class="kw">int</span> x = <span class="num">64</span>;
+x >>= <span class="num">1</span>; <span class="cmt">/* x = 32  (divide por 2) */</span>
+x <<= <span class="num">2</span>; <span class="cmt">/* x = 128 (multiplica por 4) */</span></code></pre>
+    </div>
+
+    <div class="info-box tip">
+        <p><strong>// Aplicação real:</strong> Em drivers de hardware e registradores de periféricos, cada bit tem um significado. Por exemplo, no registrador de controle de uma UART: bit 0 = TX enable, bit 1 = RX enable, bit 2 = interrupt enable. Você usa exatamente essas técnicas bitwise para configurar o hardware sem afetar os outros bits.</p>
+    </div>
+</section>

@@ -1,0 +1,39 @@
+<header style="padding-top: 2rem;">
+    <h1>Hello World e a Estrutura Básica</h1>
+    <p class="subtitle">Módulo 0x01: O seu primeiro contato com a linguagem C.</p>
+</header>
+
+<section>
+    <h2>O que é a Linguagem C?</h2>
+    <p>
+        Criada na década de 1970, C é a mãe da maioria das linguagens modernas. Ela é rápida, leve e tem acesso direto ao hardware do computador. É por isso que sistemas operacionais (como Windows e Linux) e sistemas embarcados (como o Arduino e o ESP32) são escritos nela.
+    </p>
+
+    <div class="card">
+        <h3>O seu primeiro programa</h3>
+        <p>A tradição manda que o primeiro programa de qualquer desenvolvedor seja fazer o computador dizer "Olá, Mundo!". Em C, a estrutura mínima para fazer isso é a seguinte:</p>
+        
+        <div class="code-block" data-lang="c">
+<pre><span class="code-comment">// 1. Incluímos a biblioteca padrão de entrada e saída (Standard Input Output)</span>
+<span class="code-keyword">#include</span> &lt;stdio.h&gt;
+
+<span class="code-comment">// 2. A função principal: É aqui que o programa começa a rodar</span>
+<span class="code-keyword">int</span> <span class="code-function">main</span>() {
+    
+    <span class="code-comment">// 3. O comando para imprimir algo na tela</span>
+    <span class="code-function">printf</span>(<span class="code-string">"Hello, World!\n"</span>);
+    
+    <span class="code-comment">// 4. Dizemos ao sistema que tudo ocorreu bem</span>
+    <span class="code-keyword">return</span> 0;
+}</pre>
+        </div>
+    </div>
+    
+    <h2>Entendendo cada pedaço:</h2>
+    <ul>
+        <li style="margin-bottom: 10px; color: var(--text-secondary);"><strong>#include &lt;stdio.h&gt;:</strong> O C é uma linguagem "crua". Ele não sabe ler o teclado ou escrever na tela sozinho. Essa linha importa as ferramentas que nos permitem usar o <code>printf</code>.</li>
+        <li style="margin-bottom: 10px; color: var(--text-secondary);"><strong>int main():</strong> Todo programa em C precisa de um ponto de partida. Quando você executa o seu código, o computador procura imediatamente pela função chamada <code>main</code>.</li>
+        <li style="margin-bottom: 10px; color: var(--text-secondary);"><strong>printf:</strong> É a função que "imprime formatado" textos na tela. O <code>\n</code> no final serve para pular uma linha (como apertar o Enter).</li>
+        <li style="color: var(--text-secondary);"><strong>return 0;:</strong> É a forma de o programa avisar ao sistema operacional: <em>"Terminei o meu trabalho e não houve nenhum erro (zero erros)"</em>.</li>
+    </ul>
+</section>

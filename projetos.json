@@ -1,5 +1,10 @@
 [
     {
+        "title": "0xC_ Deep Dive Lab",
+        "description": "Um livro interativo focado na engenharia de baixo nível, arquitetura de memória (Stack/Heap) e contramedidas de segurança em C puro.",
+        "url": "projetos/curso-c.html"
+    },
+    {
         "title": "L.I.A. Framework",
         "description": "Assistente Inteligente Local. Arquitetura modular integrando IA, visão computacional e servidores MCP.",
         "url": "projetos/lia.html"

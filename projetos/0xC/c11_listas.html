@@ -1,0 +1,144 @@
+<header>
+    <h1>0x0B · Listas Encadeadas</h1>
+    <span class="ch-subtitle">// Estrutura de nó, inserção/remoção, NULL como sentinela e proteção contra Buffer Overflow</span>
+</header>
+
+<section>
+    <h2>Por que listas encadeadas?</h2>
+    <p>
+        Arrays têm tamanho fixo (stack) ou exigem realloc caro (heap). Uma <strong>lista encadeada</strong> resolve isso: cada elemento (<em>nó</em>) armazena o dado e um ponteiro para o próximo nó. O tamanho cresce e diminui dinamicamente, com custo O(1) para inserção/remoção no início ou quando você tem o ponteiro do nó anterior.
+    </p>
+
+    <h2>Estrutura de um nó</h2>
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>linked_list.h</span></div>
+        <pre><code><span class="pp">#include</span> <span class="str">&lt;stdlib.h&gt;</span>
+<span class="pp">#include</span> <span class="str">&lt;stdio.h&gt;</span>
+
+<span class="cmt">/* A struct referencia a si mesma — o ponteiro precisa do tag */</span>
+<span class="kw">typedef struct</span> No {
+    <span class="kw">int</span>        dado;
+    <span class="kw">struct</span> No *proximo; <span class="cmt">/* aponta para o próximo nó, ou NULL */</span>
+} No;
+
+<span class="cmt">/* Cria um novo nó no heap */</span>
+No* <span class="fn">criar_no</span>(<span class="kw">int</span> valor) {
+    No *novo = (No*) <span class="fn">malloc</span>(<span class="kw">sizeof</span>(No));
+    <span class="kw">if</span> (!novo) <span class="kw">return</span> NULL;
+    novo->dado     = valor;
+    novo->proximo  = NULL; <span class="cmt">/* sentinela: nenhum próximo */</span>
+    <span class="kw">return</span> novo;
+}</code></pre>
+    </div>
+
+    <h2>NULL como sentinela — a convenção de segurança</h2>
+    <p>
+        <code>NULL</code> é o endereço zero — garantidamente não mapeado em qualquer processo. Usá-lo como marcador do final da lista é uma convenção universalmente válida e verificável. <strong>Toda travessia de lista deve checar NULL antes de desreferenciar.</strong>
+    </p>
+
+    <div class="mem-diagram">
+        <div class="mem-row"><span class="mem-addr">head</span><span class="mem-sep">→</span><span class="mem-val">[10|*]</span><span class="mem-sep">→</span><span class="mem-val">[20|*]</span><span class="mem-sep">→</span><span class="mem-val">[30|NULL]</span></div>
+        <div class="mem-row"><span class="mem-addr">     </span><span class="mem-sep"> </span><span class="mem-val">nó 1</span><span class="mem-sep">  </span><span class="mem-val">nó 2</span><span class="mem-sep">  </span><span class="mem-val">nó 3 (final)</span></div>
+    </div>
+
+    <h2>Operações fundamentais</h2>
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>lista_ops.c</span></div>
+        <pre><code><span class="cmt">/* Inserção no início — O(1) */</span>
+<span class="kw">void</span> <span class="fn">inserir_inicio</span>(No **head, <span class="kw">int</span> valor) {
+    No *novo = <span class="fn">criar_no</span>(valor);
+    <span class="kw">if</span> (!novo) <span class="kw">return</span>;
+    novo->proximo = *head;  <span class="cmt">/* novo aponta para o antigo head */</span>
+    *head = novo;           <span class="cmt">/* head agora é o novo nó */</span>
+}
+
+<span class="cmt">/* Inserção no final — O(n) */</span>
+<span class="kw">void</span> <span class="fn">inserir_final</span>(No **head, <span class="kw">int</span> valor) {
+    No *novo = <span class="fn">criar_no</span>(valor);
+    <span class="kw">if</span> (!novo) <span class="kw">return</span>;
+
+    <span class="kw">if</span> (*head == NULL) {
+        *head = novo;
+        <span class="kw">return</span>;
+    }
+    No *atual = *head;
+    <span class="kw">while</span> (atual->proximo != NULL) { <span class="cmt">/* anda até o último */</span>
+        atual = atual->proximo;
+    }
+    atual->proximo = novo;
+}
+
+<span class="cmt">/* Remoção por valor — O(n) */</span>
+<span class="kw">void</span> <span class="fn">remover</span>(No **head, <span class="kw">int</span> valor) {
+    No *atual    = *head;
+    No *anterior = NULL;
+
+    <span class="kw">while</span> (atual != NULL && atual->dado != valor) {
+        anterior = atual;
+        atual    = atual->proximo;
+    }
+    <span class="kw">if</span> (atual == NULL) <span class="kw">return</span>; <span class="cmt">/* não encontrado */</span>
+
+    <span class="kw">if</span> (anterior == NULL) {
+        *head = atual->proximo; <span class="cmt">/* remove o head */</span>
+    } <span class="kw">else</span> {
+        anterior->proximo = atual->proximo; <span class="cmt">/* bypassa o nó */</span>
+    }
+    <span class="fn">free</span>(atual);
+}
+
+<span class="cmt">/* Impressão com guard de NULL */</span>
+<span class="kw">void</span> <span class="fn">imprimir</span>(<span class="kw">const</span> No *head) {
+    <span class="kw">while</span> (head != NULL) {
+        <span class="fn">printf</span>(<span class="str">"%d → "</span>, head->dado);
+        head = head->proximo;
+    }
+    <span class="fn">puts</span>(<span class="str">"NULL"</span>);
+}
+
+<span class="cmt">/* Liberação total — OBRIGATÓRIO para evitar memory leak */</span>
+<span class="kw">void</span> <span class="fn">liberar_lista</span>(No **head) {
+    No *atual = *head;
+    <span class="kw">while</span> (atual != NULL) {
+        No *prox = atual->proximo; <span class="cmt">/* salva antes de free! */</span>
+        <span class="fn">free</span>(atual);
+        atual = prox;
+    }
+    *head = NULL;
+}</code></pre>
+    </div>
+
+    <h2>Programa completo</h2>
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>main_lista.c</span></div>
+        <pre><code><span class="kw">int</span> <span class="fn">main</span>(<span class="kw">void</span>) {
+    No *lista = NULL; <span class="cmt">/* lista vazia — head começa em NULL */</span>
+
+    <span class="fn">inserir_inicio</span>(&amp;lista, <span class="num">10</span>);
+    <span class="fn">inserir_inicio</span>(&amp;lista, <span class="num">5</span>);
+    <span class="fn">inserir_final</span>(&amp;lista,  <span class="num">20</span>);
+    <span class="fn">inserir_final</span>(&amp;lista,  <span class="num">30</span>);
+
+    <span class="fn">imprimir</span>(lista); <span class="cmt">/* 5 → 10 → 20 → 30 → NULL */</span>
+
+    <span class="fn">remover</span>(&amp;lista, <span class="num">10</span>);
+    <span class="fn">imprimir</span>(lista); <span class="cmt">/* 5 → 20 → 30 → NULL */</span>
+
+    <span class="fn">liberar_lista</span>(&amp;lista);
+    <span class="fn">printf</span>(<span class="str">"head após free: %p\n"</span>, (<span class="kw">void</span>*)lista); <span class="cmt">/* (nil) */</span>
+    <span class="kw">return</span> <span class="num">0</span>;
+}</code></pre>
+    </div>
+
+    <h2>Como listas encadeadas protegem contra Buffer Overflow</h2>
+    <p>
+        Arrays de tamanho fixo são a principal fonte de buffer overflow: se a entrada excede o tamanho reservado, você sobrescreve memória adjacente. Com uma lista encadeada, cada elemento é alocado individualmente no heap com <code>malloc</code> — não há buffer de tamanho fixo a transbordar. A lista cresce exatamente o necessário.
+    </p>
+    <div class="info-box tip">
+        <p><strong>// Tradeoff:</strong> Listas encadeadas têm custo de memória (ponteiro extra por nó) e pior localidade de cache (nós espalhados no heap). Para a maioria dos casos onde o tamanho é imprevisível e segurança importa, o tradeoff vale. Para performance pura com tamanho conhecido, arrays/vetores vencen.</p>
+    </div>
+
+    <div class="info-box note">
+        <p><strong>// Próximo passo:</strong> A técnica de ponteiro duplo (<code>No **head</code>) vista aqui é o padrão para modificar o head da lista sem precisar de variáveis globais ou valores de retorno. Este padrão de "ponteiro para ponteiro" reaparece em listas duplamente encadeadas, árvores e qualquer estrutura dinâmica em C.</p>
+    </div>
+</section>

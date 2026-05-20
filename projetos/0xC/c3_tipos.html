@@ -1,0 +1,112 @@
+<header>
+    <h1>0x03 · Tipos Primitivos e Bits</h1>
+    <span class="ch-subtitle">// Mapeamento de bits, modificadores signed/unsigned e representação na memória</span>
+</header>
+
+<section>
+    <h2>Tipos não são abstrações — são garantias de tamanho</h2>
+    <p>
+        Em C, um tipo primitivo define dois contratos com o compilador: <strong>quantos bytes de memória</strong> a variável ocupa e <strong>como interpretar</strong> o padrão de bits armazenado (signed, unsigned, float). Tudo o mais é consequência.
+    </p>
+
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>sizeof_demo.c</span></div>
+        <pre><code><span class="pp">#include</span> <span class="str">&lt;stdio.h&gt;</span>
+
+<span class="kw">int</span> <span class="fn">main</span>(<span class="kw">void</span>) {
+    <span class="fn">printf</span>(<span class="str">"char    : %zu byte(s)\n"</span>,  <span class="kw">sizeof</span>(<span class="kw">char</span>));
+    <span class="fn">printf</span>(<span class="str">"short   : %zu byte(s)\n"</span>,  <span class="kw">sizeof</span>(<span class="kw">short</span>));
+    <span class="fn">printf</span>(<span class="str">"int     : %zu byte(s)\n"</span>,  <span class="kw">sizeof</span>(<span class="kw">int</span>));
+    <span class="fn">printf</span>(<span class="str">"long    : %zu byte(s)\n"</span>,  <span class="kw">sizeof</span>(<span class="kw">long</span>));
+    <span class="fn">printf</span>(<span class="str">"float   : %zu byte(s)\n"</span>,  <span class="kw">sizeof</span>(<span class="kw">float</span>));
+    <span class="fn">printf</span>(<span class="str">"double  : %zu byte(s)\n"</span>,  <span class="kw">sizeof</span>(<span class="kw">double</span>));
+    <span class="fn">printf</span>(<span class="str">"pointer : %zu byte(s)\n"</span>,  <span class="kw">sizeof</span>(<span class="kw">void</span>*));
+    <span class="kw">return</span> <span class="num">0</span>;
+}</code></pre>
+    </div>
+
+    <h2>Tabela de tipos — tamanhos típicos em x86-64 Linux</h2>
+    <div class="mem-diagram">
+        <div class="mem-row"><span class="mem-addr">Tipo</span><span class="mem-val">Tamanho</span><span class="mem-label">Range (signed)</span></div>
+        <div class="mem-row"><span class="mem-addr">char</span><span class="mem-val">1 byte</span><span class="mem-label">-128 a 127</span></div>
+        <div class="mem-row"><span class="mem-addr">short</span><span class="mem-val">2 bytes</span><span class="mem-label">-32.768 a 32.767</span></div>
+        <div class="mem-row"><span class="mem-addr">int</span><span class="mem-val">4 bytes</span><span class="mem-label">-2.147.483.648 a 2.147.483.647</span></div>
+        <div class="mem-row"><span class="mem-addr">long</span><span class="mem-val">8 bytes</span><span class="mem-label">-9.2 × 10¹⁸ a 9.2 × 10¹⁸</span></div>
+        <div class="mem-row"><span class="mem-addr">float</span><span class="mem-val">4 bytes</span><span class="mem-label">IEEE 754 — ~7 dígitos decimais</span></div>
+        <div class="mem-row"><span class="mem-addr">double</span><span class="mem-val">8 bytes</span><span class="mem-label">IEEE 754 — ~15 dígitos decimais</span></div>
+    </div>
+
+    <div class="info-box warning">
+        <p><strong>⚠ Atenção:</strong> O padrão C <em>não garante</em> tamanhos fixos para <code>int</code> e <code>long</code> — eles dependem da ABI da plataforma. Para código portável e preciso, use <code>&lt;stdint.h&gt;</code>: <code>int8_t</code>, <code>uint32_t</code>, <code>int64_t</code>.</p>
+    </div>
+
+    <h2>Signed vs Unsigned — Complemento de dois</h2>
+    <p>
+        Um <code>int</code> de 4 bytes armazena 32 bits. A diferença entre <code>signed int</code> e <code>unsigned int</code> é <strong>somente a interpretação</strong> do bit mais significativo (MSB — Most Significant Bit). O padrão de bits na memória é idêntico — o que muda é como a CPU interpreta as operações aritméticas.
+    </p>
+    <p>
+        Em <strong>complemento de dois</strong> (representação padrão para signed), o MSB tem peso negativo. Para um byte (<code>char</code>):
+    </p>
+
+    <div class="mem-diagram">
+        <div class="mem-row"><span class="mem-addr">Bit 7 (MSB)</span><span class="mem-val">peso: -128</span><span class="mem-label">← sinal</span></div>
+        <div class="mem-row"><span class="mem-addr">Bit 6</span><span class="mem-val">peso: +64</span></div>
+        <div class="mem-row"><span class="mem-addr">Bit 5</span><span class="mem-val">peso: +32</span></div>
+        <div class="mem-row"><span class="mem-addr">Bit 4</span><span class="mem-val">peso: +16</span></div>
+        <div class="mem-row"><span class="mem-addr">Bit 3</span><span class="mem-val">peso: +8</span></div>
+        <div class="mem-row"><span class="mem-addr">Bit 2</span><span class="mem-val">peso: +4</span></div>
+        <div class="mem-row"><span class="mem-addr">Bit 1</span><span class="mem-val">peso: +2</span></div>
+        <div class="mem-row"><span class="mem-addr">Bit 0 (LSB)</span><span class="mem-val">peso: +1</span></div>
+    </div>
+
+    <p>O padrão <code>11111111</code> (0xFF) interpretado como <code>unsigned char</code> = <strong>255</strong>. Interpretado como <code>signed char</code> = <strong>-1</strong> (−128 + 64 + 32 + 16 + 8 + 4 + 2 + 1 = −1).</p>
+
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>signed_unsigned.c</span></div>
+        <pre><code><span class="pp">#include</span> <span class="str">&lt;stdio.h&gt;</span>
+
+<span class="kw">int</span> <span class="fn">main</span>(<span class="kw">void</span>) {
+    <span class="kw">unsigned char</span> u = <span class="num">255</span>;
+    <span class="kw">signed char</span>   s = (<span class="kw">signed char</span>)u; <span class="cmt">/* reinterpreta os mesmos bits */</span>
+
+    <span class="fn">printf</span>(<span class="str">"unsigned: %u\n"</span>, u);  <span class="cmt">/* 255  */</span>
+    <span class="fn">printf</span>(<span class="str">"signed  : %d\n"</span>, s);  <span class="cmt">/* -1   */</span>
+    <span class="fn">printf</span>(<span class="str">"hex     : 0x%X\n"</span>, u); <span class="cmt">/* 0xFF */</span>
+    <span class="kw">return</span> <span class="num">0</span>;
+}</code></pre>
+    </div>
+
+    <h2>Integer Overflow — o bug silencioso</h2>
+    <p>
+        Quando um valor ultrapassa o limite do tipo, ocorre <strong>overflow</strong>. Para tipos <code>unsigned</code>, o comportamento é definido pelo padrão C: o valor "enrola" (wrap-around) no módulo 2ⁿ. Para tipos <code>signed</code>, o comportamento é <em>undefined behavior</em> — o compilador pode fazer qualquer coisa.
+    </p>
+
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>overflow.c</span></div>
+        <pre><code><span class="kw">unsigned char</span> x = <span class="num">255</span>;
+x++;           <span class="cmt">/* 255 + 1 = 256 % 256 = 0 (wrap-around definido) */</span>
+<span class="fn">printf</span>(<span class="str">"%u\n"</span>, x); <span class="cmt">/* Output: 0 */</span>
+
+<span class="kw">signed int</span>    y = <span class="num">2147483647</span>; <span class="cmt">/* INT_MAX */</span>
+y++;           <span class="cmt">/* Undefined Behavior em signed! Não faça isso. */</span></code></pre>
+    </div>
+
+    <div class="info-box danger">
+        <p><strong>⚠ CVE real:</strong> Integer overflows em cálculos de tamanho de buffer são a raiz de muitos heap overflows. Exemplo: <code>size_t total = n_items * item_size;</code> — se <code>n_items</code> é controlado pelo usuário e o resultado "enrola", <code>malloc(total)</code> aloca um buffer pequeno, mas o código escreve <code>n_items * item_size</code> bytes — overflow garantido. Sempre use <code>__builtin_mul_overflow()</code> ou cheque manualmente antes de multiplicar.</p>
+    </div>
+
+    <h2>Tipos fixos com stdint.h</h2>
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>stdint_demo.c</span></div>
+        <pre><code><span class="pp">#include</span> <span class="str">&lt;stdint.h&gt;</span>
+<span class="pp">#include</span> <span class="str">&lt;stdio.h&gt;</span>
+
+<span class="kw">int</span> <span class="fn">main</span>(<span class="kw">void</span>) {
+    <span class="ty">uint8_t</span>  byte_val  = <span class="num">0xFF</span>;     <span class="cmt">/* Sempre 8 bits unsigned */</span>
+    <span class="ty">int32_t</span>  word_val  = <span class="num">-42</span>;     <span class="cmt">/* Sempre 32 bits signed  */</span>
+    <span class="ty">uint64_t</span> qword_val = <span class="num">0xDEADBEEFCAFEBABE</span>;
+    <span class="fn">printf</span>(<span class="str">"0x%llX\n"</span>, (<span class="kw">unsigned long long</span>)qword_val);
+    <span class="kw">return</span> <span class="num">0</span>;
+}</code></pre>
+    </div>
+</section>

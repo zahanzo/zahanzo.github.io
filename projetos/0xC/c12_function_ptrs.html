@@ -1,0 +1,182 @@
+<header>
+    <h1>0x0C · Ponteiros de Função</h1>
+    <span class="ch-subtitle">// Declaração, despacho dinâmico, callbacks, plugins e bases de RTOS</span>
+</header>
+
+<section>
+    <h2>Funções são código na memória</h2>
+    <p>
+        Quando o linker resolve os símbolos, cada função recebe um endereço fixo na seção <code>.text</code> do binário. Um <strong>ponteiro de função</strong> é uma variável que armazena esse endereço. Assim como um <code>int*</code> aponta para um inteiro, um ponteiro de função aponta para código executável e pode ser chamado.
+    </p>
+    <p>
+        Isso habilita <strong>despacho dinâmico</strong>: a decisão de qual função chamar é tomada em <em>runtime</em>, não em compile-time. É a base de callbacks, sistemas de plugins, tabelas de dispatch (vtables de C++), e handlers de interrupção em RTOS.
+    </p>
+
+    <h2>Sintaxe de ponteiro de função</h2>
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>fn_ptr_basico.c</span></div>
+        <pre><code><span class="pp">#include</span> <span class="str">&lt;stdio.h&gt;</span>
+
+<span class="kw">int</span> <span class="fn">somar</span>(<span class="kw">int</span> a, <span class="kw">int</span> b)     { <span class="kw">return</span> a + b; }
+<span class="kw">int</span> <span class="fn">subtrair</span>(<span class="kw">int</span> a, <span class="kw">int</span> b) { <span class="kw">return</span> a - b; }
+<span class="kw">int</span> <span class="fn">multiplicar</span>(<span class="kw">int</span> a, <span class="kw">int</span> b){ <span class="kw">return</span> a * b; }
+
+<span class="kw">int</span> <span class="fn">main</span>(<span class="kw">void</span>) {
+    <span class="cmt">/* Declara ponteiro de função:
+       int (*nome)(int, int) — aponta para função que recebe 2 ints e retorna int */</span>
+    <span class="kw">int</span> (*op)(<span class="kw">int</span>, <span class="kw">int</span>);
+
+    op = <span class="fn">somar</span>;                   <span class="cmt">/* sem & — nome da função já é endereço */</span>
+    <span class="fn">printf</span>(<span class="str">"10 + 3 = %d\n"</span>, <span class="fn">op</span>(<span class="num">10</span>, <span class="num">3</span>)); <span class="cmt">/* 13 */</span>
+
+    op = <span class="fn">subtrair</span>;
+    <span class="fn">printf</span>(<span class="str">"10 - 3 = %d\n"</span>, <span class="fn">op</span>(<span class="num">10</span>, <span class="num">3</span>)); <span class="cmt">/* 7  */</span>
+
+    op = <span class="fn">multiplicar</span>;
+    <span class="fn">printf</span>(<span class="str">"10 * 3 = %d\n"</span>, <span class="fn">op</span>(<span class="num">10</span>, <span class="num">3</span>)); <span class="cmt">/* 30 */</span>
+
+    <span class="fn">printf</span>(<span class="str">"Endereço de multiplicar: %p\n"</span>, (<span class="kw">void</span>*)(op));
+
+    <span class="kw">return</span> <span class="num">0</span>;
+}</code></pre>
+    </div>
+
+    <h2>typedef para legibilidade</h2>
+    <p>
+        A sintaxe de ponteiro de função aninhada fica ilegível rapidamente. Use <code>typedef</code> para criar um alias de tipo limpo:
+    </p>
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>fn_ptr_typedef.c</span></div>
+        <pre><code><span class="cmt">/* Define o tipo Operacao como ponteiro para função (int, int) → int */</span>
+<span class="kw">typedef int</span> (*Operacao)(<span class="kw">int</span>, <span class="kw">int</span>);
+
+<span class="kw">void</span> <span class="fn">executar</span>(Operacao fn, <span class="kw">int</span> a, <span class="kw">int</span> b) {
+    <span class="fn">printf</span>(<span class="str">"Resultado: %d\n"</span>, <span class="fn">fn</span>(a, b));
+}
+
+<span class="kw">int</span> <span class="fn">main</span>(<span class="kw">void</span>) {
+    <span class="fn">executar</span>(<span class="fn">somar</span>,      <span class="num">5</span>, <span class="num">3</span>); <span class="cmt">/* 8  */</span>
+    <span class="fn">executar</span>(<span class="fn">subtrair</span>,   <span class="num">5</span>, <span class="num">3</span>); <span class="cmt">/* 2  */</span>
+    <span class="fn">executar</span>(<span class="fn">multiplicar</span>,<span class="num">5</span>, <span class="num">3</span>); <span class="cmt">/* 15 */</span>
+    <span class="kw">return</span> <span class="num">0</span>;
+}</code></pre>
+    </div>
+
+    <h2>Tabela de dispatch — motor de plugins</h2>
+    <p>
+        A técnica mais poderosa: um array de ponteiros de função. Cada índice corresponde a um comando/opcode. A seleção do handler é O(1) — um único acesso ao array — em vez de uma cadeia de if/else ou switch.
+    </p>
+
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>dispatch_table.c</span></div>
+        <pre><code><span class="pp">#include</span> <span class="str">&lt;stdio.h&gt;</span>
+<span class="pp">#include</span> <span class="str">&lt;string.h&gt;</span>
+
+<span class="kw">typedef void</span> (*Handler)(<span class="kw">const char</span> *args);
+
+<span class="kw">void</span> <span class="fn">cmd_status</span> (<span class="kw">const char</span> *a) { <span class="fn">printf</span>(<span class="str">"[STATUS] sistema online. args=%s\n"</span>, a); }
+<span class="kw">void</span> <span class="fn">cmd_reset</span>  (<span class="kw">const char</span> *a) { <span class="fn">printf</span>(<span class="str">"[RESET]  reiniciando... args=%s\n"</span>, a); }
+<span class="kw">void</span> <span class="fn">cmd_debug</span>  (<span class="kw">const char</span> *a) { <span class="fn">printf</span>(<span class="str">"[DEBUG]  dump de memória. args=%s\n"</span>, a); }
+
+<span class="kw">typedef struct</span> {
+    <span class="kw">const char</span> *nome;
+    Handler     fn;
+} Comando;
+
+<span class="kw">int</span> <span class="fn">main</span>(<span class="kw">void</span>) {
+    Comando tabela[] = {
+        { <span class="str">"status"</span>, <span class="fn">cmd_status</span> },
+        { <span class="str">"reset"</span>,  <span class="fn">cmd_reset</span>  },
+        { <span class="str">"debug"</span>,  <span class="fn">cmd_debug</span>  },
+        { NULL, NULL }             <span class="cmt">/* sentinela de fim de tabela */</span>
+    };
+
+    <span class="kw">const char</span> *entrada = <span class="str">"reset"</span>;
+
+    <span class="kw">for</span> (<span class="kw">int</span> i = <span class="num">0</span>; tabela[i].nome != NULL; i++) {
+        <span class="kw">if</span> (<span class="fn">strcmp</span>(tabela[i].nome, entrada) == <span class="num">0</span>) {
+            tabela[i].<span class="fn">fn</span>(<span class="str">"arg1"</span>);  <span class="cmt">/* despacho dinâmico */</span>
+            <span class="kw">return</span> <span class="num">0</span>;
+        }
+    }
+    <span class="fn">fprintf</span>(stderr, <span class="str">"Comando desconhecido: %s\n"</span>, entrada);
+    <span class="kw">return</span> <span class="num">1</span>;
+}</code></pre>
+    </div>
+
+    <h2>Callbacks — qsort como exemplo canônico</h2>
+    <p>
+        A função <code>qsort</code> da stdlib é o exemplo mais famoso de callback em C. Ela implementa quicksort genérico e recebe um ponteiro de função de comparação que define a ordenação:
+    </p>
+
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>qsort_callback.c</span></div>
+        <pre><code><span class="pp">#include</span> <span class="str">&lt;stdlib.h&gt;</span>
+<span class="pp">#include</span> <span class="str">&lt;stdio.h&gt;</span>
+
+<span class="cmt">/* Comparador: recebe void* genéricos, retorna negativo/0/positivo */</span>
+<span class="kw">int</span> <span class="fn">cmp_crescente</span>(<span class="kw">const void</span> *a, <span class="kw">const void</span> *b) {
+    <span class="kw">return</span> *(<span class="kw">const int</span>*)a - *(<span class="kw">const int</span>*)b;
+}
+
+<span class="kw">int</span> <span class="fn">cmp_decrescente</span>(<span class="kw">const void</span> *a, <span class="kw">const void</span> *b) {
+    <span class="kw">return</span> *(<span class="kw">const int</span>*)b - *(<span class="kw">const int</span>*)a;
+}
+
+<span class="kw">int</span> <span class="fn">main</span>(<span class="kw">void</span>) {
+    <span class="kw">int</span> arr[] = {<span class="num">5</span>, <span class="num">2</span>, <span class="num">8</span>, <span class="num">1</span>, <span class="num">9</span>, <span class="num">3</span>};
+    <span class="kw">int</span> n = <span class="kw">sizeof</span>(arr) / <span class="kw">sizeof</span>(arr[<span class="num">0</span>]);
+
+    <span class="fn">qsort</span>(arr, n, <span class="kw">sizeof</span>(<span class="kw">int</span>), <span class="fn">cmp_crescente</span>);
+    <span class="cmt">/* arr = {1, 2, 3, 5, 8, 9} */</span>
+
+    <span class="fn">qsort</span>(arr, n, <span class="kw">sizeof</span>(<span class="kw">int</span>), <span class="fn">cmp_decrescente</span>);
+    <span class="cmt">/* arr = {9, 8, 5, 3, 2, 1} */</span>
+    <span class="kw">return</span> <span class="num">0</span>;
+}</code></pre>
+    </div>
+
+    <h2>Base para RTOS — tabela de tarefas</h2>
+    <p>
+        Em sistemas embarcados de tempo real (RTOS), o scheduler mantém uma tabela de tarefas onde cada entrada é um ponteiro de função. O scheduler chama cada tarefa sequencialmente (cooperative) ou por prioridade/timer (preemptive). O padrão é exatamente a tabela de dispatch vista acima — com metadados de prioridade e período:
+    </p>
+
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>rtos_scheduler_base.c</span></div>
+        <pre><code><span class="kw">typedef void</span> (*Tarefa)(<span class="kw">void</span>);
+
+<span class="kw">typedef struct</span> {
+    Tarefa    fn;
+    <span class="kw">int</span>       periodo_ms;
+    <span class="kw">int</span>       ultimo_run_ms;
+} EntradaTarefa;
+
+<span class="kw">void</span> <span class="fn">tarefa_sensor</span>  (<span class="kw">void</span>) { <span class="cmt">/* lê ADC */</span> }
+<span class="kw">void</span> <span class="fn">tarefa_controle</span>(<span class="kw">void</span>) { <span class="cmt">/* PID loop */</span> }
+<span class="kw">void</span> <span class="fn">tarefa_comms</span>   (<span class="kw">void</span>) { <span class="cmt">/* envia UART */</span> }
+
+EntradaTarefa scheduler[] = {
+    { <span class="fn">tarefa_sensor</span>,   <span class="num">10</span>,  <span class="num">0</span> }, <span class="cmt">/* a cada 10ms */</span>
+    { <span class="fn">tarefa_controle</span>, <span class="num">20</span>,  <span class="num">0</span> }, <span class="cmt">/* a cada 20ms */</span>
+    { <span class="fn">tarefa_comms</span>,    <span class="num">100</span>, <span class="num">0</span> }, <span class="cmt">/* a cada 100ms */</span>
+};
+
+<span class="kw">void</span> <span class="fn">run_scheduler</span>(<span class="kw">int</span> agora_ms) {
+    <span class="kw">int</span> n = <span class="kw">sizeof</span>(scheduler) / <span class="kw">sizeof</span>(scheduler[<span class="num">0</span>]);
+    <span class="kw">for</span> (<span class="kw">int</span> i = <span class="num">0</span>; i < n; i++) {
+        <span class="kw">if</span> (agora_ms - scheduler[i].ultimo_run_ms >= scheduler[i].periodo_ms) {
+            scheduler[i].<span class="fn">fn</span>();              <span class="cmt">/* despacho dinâmico */</span>
+            scheduler[i].ultimo_run_ms = agora_ms;
+        }
+    }
+}</code></pre>
+    </div>
+
+    <div class="info-box danger">
+        <p><strong>⚠ Segurança — Function Pointer Hijacking:</strong> Em exploits de corrupção de memória, um atacante que consegue sobrescrever um ponteiro de função (em uma struct no heap, por exemplo) pode redirecionar a execução para código arbitrário — um <em>hijack de fluxo de controle</em>. Mitigações: <strong>CFI (Control Flow Integrity)</strong> — compiladores modernos com <code>-fsanitize=cfi</code> inserem verificações que garantem que o destino de um call indireto é uma função válida do tipo esperado.</p>
+    </div>
+
+    <div class="info-box tip">
+        <p><strong>// EOF:</strong> Você chegou ao final do 0xC_ Deep Dive Lab. De ELF sections a ponteiros de função, de stack frames a heap exploitation — você agora tem o modelo mental de baixo nível que separa quem programa de quem <em>engenheira</em> software. O próximo passo: compile cada exemplo, abra no GDB, quebre tudo e entenda por quê.</p>
+    </div>
+</section>

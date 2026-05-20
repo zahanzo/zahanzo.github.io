@@ -1,0 +1,96 @@
+<header>
+    <h1>0x04 · Anatomia da Stack</h1>
+    <span class="ch-subtitle">// Stack Frames, LIFO, ciclo de vida de variáveis locais e Information Leak</span>
+</header>
+
+<section>
+    <h2>O que é a Stack?</h2>
+    <p>
+        A <strong>Stack</strong> (pilha) é uma região de memória gerenciada automaticamente pelo compilador e pela CPU. Ela segue a disciplina <strong>LIFO — Last In, First Out</strong>: o último bloco alocado é o primeiro a ser liberado. Essa propriedade é perfeita para modelar chamadas de função aninhadas.
+    </p>
+    <p>
+        Em x86-64, a stack cresce para <strong>endereços mais baixos</strong>. Dois registradores a governam: <code>RSP</code> (Stack Pointer) aponta para o topo atual da stack, e <code>RBP</code> (Base Pointer) aponta para a base do frame atual.
+    </p>
+
+    <h2>Stack Frames</h2>
+    <p>
+        Cada chamada de função cria um <strong>stack frame</strong> — um bloco de memória reservado na stack para as variáveis locais, o endereço de retorno e os registradores salvos daquela invocação. Quando a função retorna, o frame é "desempilhado" movendo RSP de volta.
+    </p>
+
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>stack_frames.c</span></div>
+        <pre><code><span class="pp">#include</span> <span class="str">&lt;stdio.h&gt;</span>
+
+<span class="kw">int</span> <span class="fn">soma</span>(<span class="kw">int</span> a, <span class="kw">int</span> b) {
+    <span class="kw">int</span> resultado = a + b; <span class="cmt">/* variável local no frame de soma() */</span>
+    <span class="kw">return</span> resultado;
+}
+
+<span class="kw">int</span> <span class="fn">main</span>(<span class="kw">void</span>) {
+    <span class="kw">int</span> x = <span class="num">10</span>;
+    <span class="kw">int</span> y = <span class="num">20</span>;
+    <span class="kw">int</span> s = <span class="fn">soma</span>(x, y); <span class="cmt">/* cria frame de soma() */</span>
+    <span class="fn">printf</span>(<span class="str">"Soma: %d\n"</span>, s);
+    <span class="kw">return</span> <span class="num">0</span>;
+}</code></pre>
+    </div>
+
+    <h2>O que acontece na memória (Assembly implícito)</h2>
+
+    <div class="mem-diagram">
+        <div class="mem-row"><span class="mem-addr">Stack (alto→baixo)</span></div>
+        <div class="mem-row"><span class="mem-addr">─────────────────</span></div>
+        <div class="mem-row"><span class="mem-addr">... (main frame)</span></div>
+        <div class="mem-row"><span class="mem-addr">[rbp-8]</span><span class="mem-val">0x0000000A</span><span class="mem-label">← x = 10</span></div>
+        <div class="mem-row"><span class="mem-addr">[rbp-16]</span><span class="mem-val">0x00000014</span><span class="mem-label">← y = 20</span></div>
+        <div class="mem-row"><span class="mem-addr">[rbp-20]</span><span class="mem-val">0x0000001E</span><span class="mem-label">← s = 30 (após retorno)</span></div>
+        <div class="mem-row"><span class="mem-addr">─────────────────</span></div>
+        <div class="mem-row"><span class="mem-addr">(soma frame)</span></div>
+        <div class="mem-row"><span class="mem-addr">[ret addr]</span><span class="mem-val">0x00401185</span><span class="mem-label">← endereço de retorno em main</span></div>
+        <div class="mem-row"><span class="mem-addr">[saved rbp]</span><span class="mem-val">0x7ffe1234</span><span class="mem-label">← rbp de main salvo</span></div>
+        <div class="mem-row"><span class="mem-addr">[rbp-4]</span><span class="mem-val">0x0000001E</span><span class="mem-label">← resultado = 30</span></div>
+        <div class="mem-row"><span class="mem-addr">RSP ────────────</span><span class="mem-label">← topo atual</span></div>
+    </div>
+
+    <h2>Ciclo de vida de variáveis locais</h2>
+    <p>
+        Variáveis locais existem <strong>apenas durante a execução da função</strong>. Quando a função retorna e o RSP é restaurado, aquele espaço de memória não é zerado — o compilador simplesmente ignora aquela região. Os bytes antigos permanecem fisicamente na RAM até serem sobrescritos por um novo frame.
+    </p>
+    <p>
+        Isso é chamado de <strong>lixo de memória</strong> (uninitialized memory / garbage value). Se você lê uma variável local sem inicializá-la, lê exatamente esse lixo.
+    </p>
+
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>garbage_value.c</span></div>
+        <pre><code><span class="pp">#include</span> <span class="str">&lt;stdio.h&gt;</span>
+
+<span class="kw">void</span> <span class="fn">preenche</span>(<span class="kw">void</span>) {
+    <span class="kw">int</span> segredo = <span class="num">0xDEADBEEF</span>; <span class="cmt">/* dado "sensível" no stack frame */</span>
+    <span class="fn">printf</span>(<span class="str">"segredo está em: %p\n"</span>, (<span class="kw">void</span>*)&amp;segredo);
+}
+
+<span class="kw">void</span> <span class="fn">vaza</span>(<span class="kw">void</span>) {
+    <span class="kw">int</span> lixo; <span class="cmt">/* NÃO inicializada — ocupa o mesmo espaço do frame anterior */</span>
+    <span class="fn">printf</span>(<span class="str">"lixo lido: 0x%X\n"</span>, lixo); <span class="cmt">/* pode imprimir 0xDEADBEEF! */</span>
+}
+
+<span class="kw">int</span> <span class="fn">main</span>(<span class="kw">void</span>) {
+    <span class="fn">preenche</span>();
+    <span class="fn">vaza</span>();    <span class="cmt">/* reutiliza o mesmo espaço de stack */</span>
+    <span class="kw">return</span> <span class="num">0</span>;
+}</code></pre>
+    </div>
+
+    <div class="info-box danger">
+        <p><strong>⚠ Information Leak — CVE real:</strong> Essa técnica é a base de ataques de <em>information disclosure</em>. Se uma função copia dados sensíveis (chave criptográfica, senha) para a stack e não os zera antes de retornar, um atacante que consiga ler memória naquela região (via bug de leitura fora dos limites) pode extrair esses dados. A mitigação é: <strong>sempre zere buffers sensíveis</strong> com <code>memset(buffer, 0, sizeof(buffer))</code> antes de retornar — e use <code>memset_explicit()</code> ou <code>SecureZeroMemory()</code> para evitar que o compilador otimize o memset para fora.</p>
+    </div>
+
+    <h2>Stack Overflow (o real)</h2>
+    <p>
+        A stack tem tamanho fixo (tipicamente 8 MB no Linux). Recursão infinita ou alocação de arrays gigantes na stack (ex: <code>char buf[10000000];</code>) consome toda a stack até o sistema operacional levantar um <strong>SIGSEGV</strong> — o famoso segmentation fault por stack overflow. Monitore o uso com <code>ulimit -s</code>.
+    </p>
+
+    <div class="info-box tip">
+        <p><strong>// Debug:</strong> No GDB, use <code>info frame</code> para ver o frame atual, <code>backtrace</code> (ou <code>bt</code>) para ver a call stack completa e <code>x/16xw $rsp</code> para examinar os 16 words a partir do topo da stack.</p>
+    </div>
+</section>

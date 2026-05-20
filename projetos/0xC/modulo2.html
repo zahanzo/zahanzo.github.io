@@ -1,0 +1,66 @@
+<header style="padding-top: 2rem;">
+    <h1>Variáveis e Tipos de Dados</h1>
+    <p class="subtitle">Módulo 0x02: Como o computador guarda e lembra das coisas.</p>
+</header>
+
+<section>
+    <h2>O que é uma Variável?</h2>
+    <p>
+        Imagine a memória do computador (RAM) como um gigantesco armário cheio de gavetas. Uma variável é como colar uma etiqueta com um nome em uma dessas gavetas para guardar um dado lá dentro e poder usá-lo depois.
+    </p>
+    <p>
+        Porém, a linguagem C é "fortemente tipada". Isso significa que você precisa dizer ao computador exatamente <strong>qual tipo de coisa</strong> você vai guardar na gaveta antes de usá-la, para que ele reserve o espaço do tamanho correto.
+    </p>
+
+    <div class="features-grid">
+        <div class="feature">
+            <h4>int (Inteiros)</h4>
+            <p>Guarda números inteiros sem vírgula, positivos ou negativos. Ex: 10, -5, 1024.</p>
+        </div>
+        <div class="feature">
+            <h4>float (Decimais)</h4>
+            <p>Guarda números quebrados (ponto flutuante). Ex: 3.14, 99.90. Lembre-se: em C, usamos <strong>ponto</strong> em vez de vírgula!</p>
+        </div>
+        <div class="feature">
+            <h4>char (Caracteres)</h4>
+            <p>Guarda apenas uma única letra ou símbolo. Ex: 'A', 'x', '@'. Sempre usamos aspas simples.</p>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Criando Variáveis na Prática</h3>
+        
+        <div class="code-block" data-lang="c">
+<pre><span class="code-keyword">#include</span> &lt;stdio.h&gt;
+
+<span class="code-keyword">int</span> <span class="code-function">main</span>() {
+    <span class="code-comment">// DECLARANDO as variáveis (Criando as gavetas)</span>
+    <span class="code-keyword">int</span> idade;
+    <span class="code-keyword">float</span> temperatura;
+    <span class="code-keyword">char</span> inicial_do_nome;
+    
+    <span class="code-comment">// ATRIBUINDO valores (Colocando coisas nas gavetas)</span>
+    idade = 25;
+    temperatura = 36.5;
+    inicial_do_nome = <span class="code-string">'R'</span>;
+    
+    <span class="code-comment">// Podemos declarar e atribuir na mesma linha!</span>
+    <span class="code-keyword">int</span> nivel_bateria = 100;
+    
+    <span class="code-function">printf</span>(<span class="code-string">"Bateria atual: %d%%\n"</span>, nivel_bateria);
+    
+    <span class="code-keyword">return</span> 0;
+}</pre>
+        </div>
+    </div>
+    
+    <h2>Imprimindo Variáveis (Os Modificadores)</h2>
+    <p>
+        Para exibir o valor de uma gaveta usando o <code>printf</code>, nós usamos um "código secreto" (chamado especificador de formato) dentro do texto, que avisa o computador que ali entrará uma variável:
+    </p>
+    <ul>
+        <li style="color: var(--text-secondary);"><strong>%d</strong>: Usado para <code>int</code> (Decimal Integer).</li>
+        <li style="color: var(--text-secondary);"><strong>%f</strong>: Usado para <code>float</code>.</li>
+        <li style="color: var(--text-secondary);"><strong>%c</strong>: Usado para <code>char</code>.</li>
+    </ul>
+</section>

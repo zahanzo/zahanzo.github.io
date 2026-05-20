@@ -1,0 +1,97 @@
+<header>
+    <h1>0x02 · Pipeline de Compilação</h1>
+    <span class="ch-subtitle">// Pré-processador → Compilador → Assembler → Linker</span>
+</header>
+
+<section>
+    <h2>A jornada do .c até o binário</h2>
+    <p>
+        Quando você executa <code>gcc programa.c -o programa</code>, quatro ferramentas distintas entram em ação em sequência. Entender cada estágio explica por que certos erros aparecem em momentos específicos, como os símbolos são resolvidos e o que são arquivos <code>.o</code>, <code>.a</code> e <code>.so</code>.
+    </p>
+
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">shell</span><span>pipeline explícito</span></div>
+        <pre><code><span class="cmt"># Estágio 1: Pré-processador → gera .i (C puro, sem diretivas)</span>
+gcc -E programa.c -o programa.i
+
+<span class="cmt"># Estágio 2: Compilador → gera .s (Assembly da sua arquitetura)</span>
+gcc -S programa.i -o programa.s
+
+<span class="cmt"># Estágio 3: Assembler → gera .o (código objeto, ELF relocável)</span>
+gcc -c programa.s -o programa.o
+
+<span class="cmt"># Estágio 4: Linker → gera binário executável final</span>
+gcc programa.o -o programa</code></pre>
+    </div>
+
+    <h2>Estágio 1 — Pré-processador (cpp)</h2>
+    <p>
+        O pré-processador é um motor de substituição de texto. Ele não entende C. Ele processa diretivas que começam com <code>#</code>:
+    </p>
+    <p>
+        <strong><code>#include &lt;stdio.h&gt;</code></strong> — Insere literalmente o conteúdo do arquivo header no ponto da diretiva. Nada mais. Se você rodar <code>gcc -E</code> em qualquer arquivo, verá o resultado: milhares de linhas de declarações que vieram dos headers do sistema.
+    </p>
+    <p>
+        <strong><code>#define MAX 100</code></strong> — Substituição textual simples. <code>MAX</code> vira literalmente <code>100</code> no código antes da compilação. Não há tipo, não há escopo — motivo pelo qual <code>const int</code> é preferível em C moderno.
+    </p>
+
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>preprocessor_demo.c</span></div>
+        <pre><code><span class="pp">#define BUFFER_SIZE 256</span>
+<span class="pp">#define MAX(a, b) ((a) > (b) ? (a) : (b))</span>
+
+<span class="kw">char</span> buffer[BUFFER_SIZE]; <span class="cmt">/* Vira: char buffer[256]; */</span>
+<span class="kw">int</span> x = <span class="fn">MAX</span>(<span class="num">3</span>, <span class="num">5</span>);       <span class="cmt">/* Vira: int x = ((3) > (5) ? (3) : (5)); */</span></code></pre>
+    </div>
+
+    <div class="info-box danger">
+        <p><strong>⚠ Macro sem parênteses = bug clássico:</strong> <code>#define DOBRO(x) x*2</code> — se você chamar <code>DOBRO(3+4)</code>, vira <code>3+4*2 = 11</code>, não <code>14</code>. Sempre envolva macros com parênteses: <code>#define DOBRO(x) ((x)*2)</code>.</p>
+    </div>
+
+    <h2>Estágio 2 — Compilador (cc1)</h2>
+    <p>
+        O compilador é onde a inteligência acontece. Ele recebe C puro (sem diretivas) e gera <strong>Assembly</strong> específico para a arquitetura alvo (x86-64, ARM, RISC-V). É aqui que ocorre:
+    </p>
+    <p><strong>Análise Léxica e Sintática</strong> — tokens, árvore AST, verificação de tipos. Os erros de compilação que você vê são daqui.</p>
+    <p><strong>Otimizações</strong> — com <code>-O2</code>/<code>-O3</code>, o compilador pode eliminar variáveis inteiras, reordenar operações, fazer inlining de funções, etc. Use <code>-O0</code> para estudar o código gerado sem surpresas.</p>
+
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">asm</span><span>main.s — Assembly x86-64 gerado pelo GCC</span></div>
+        <pre><code><span class="fn">main</span>:
+    pushq   %rbp          <span class="cmt">; salva base pointer do chamador</span>
+    movq    %rsp, %rbp    <span class="cmt">; cria novo stack frame</span>
+    movl    $0, %eax      <span class="cmt">; prepara valor de retorno: 0</span>
+    popq    %rbp          <span class="cmt">; restaura base pointer</span>
+    ret                   <span class="cmt">; retorna para _start → exit(0)</span></code></pre>
+    </div>
+
+    <h2>Estágio 3 — Assembler (as)</h2>
+    <p>
+        O assembler converte o texto Assembly em <strong>código máquina binário</strong>, gerando um arquivo <code>.o</code> (objeto). Este arquivo é um ELF <em>relocável</em>: os endereços finais ainda não foram atribuídos. Referências a funções externas (<code>printf</code>, por exemplo) ficam marcadas como <em>undefined symbols</em> — o linker resolverá depois.
+    </p>
+    <p>Inspecione: <code>nm programa.o</code> — você verá <code>U printf</code> (undefined) e <code>T main</code> (text section).</p>
+
+    <h2>Estágio 4 — Linker (ld)</h2>
+    <p>
+        O linker recebe um ou mais arquivos <code>.o</code> e <strong>bibliotecas</strong> (<code>.a</code> estáticas ou <code>.so</code> dinâmicas) e produz o binário final. Suas responsabilidades:
+    </p>
+    <p><strong>Resolução de Símbolos</strong> — encontra a implementação de cada símbolo undefined. Se <code>printf</code> não for encontrado em nenhum <code>.o</code> ou biblioteca, você recebe o erro <em>"undefined reference to 'printf'"</em>.</p>
+    <p><strong>Relocação</strong> — atribui endereços virtuais finais a todas as seções e corrige os offsets no código.</p>
+    <p><strong>Layout da Memória</strong> — decide onde ficam <code>.text</code>, <code>.data</code>, <code>.bss</code> no espaço de endereçamento virtual do processo.</p>
+
+    <div class="mem-diagram">
+        <div class="mem-row"><span class="mem-addr">programa.c</span><span class="mem-sep">→</span><span class="mem-val">[cpp]</span><span class="mem-sep">→</span><span class="mem-label">programa.i</span></div>
+        <div class="mem-row"><span class="mem-addr">programa.i</span><span class="mem-sep">→</span><span class="mem-val">[cc1]</span><span class="mem-sep">→</span><span class="mem-label">programa.s</span></div>
+        <div class="mem-row"><span class="mem-addr">programa.s</span><span class="mem-sep">→</span><span class="mem-val">[as] </span><span class="mem-sep">→</span><span class="mem-label">programa.o</span></div>
+        <div class="mem-row"><span class="mem-addr">*.o + libs </span><span class="mem-sep">→</span><span class="mem-val">[ld] </span><span class="mem-sep">→</span><span class="mem-label">binário ELF executável</span></div>
+    </div>
+
+    <h2>Linking estático vs. dinâmico</h2>
+    <p>
+        Na <strong>linkagem estática</strong> (<code>gcc -static</code>), o código da libc é copiado para dentro do binário. Resultado: binário autossuficiente, maior, sem dependências. Na <strong>linkagem dinâmica</strong> (padrão), o binário contém apenas referências às bibliotecas <code>.so</code> que serão carregadas em runtime pelo <em>dynamic linker</em> (<code>ld-linux.so</code>). Use <code>ldd seu_binario</code> para ver as dependências dinâmicas.
+    </p>
+
+    <div class="info-box tip">
+        <p><strong>// Dica de auditoria:</strong> <code>strings -n 8 binario | grep -i pass</code> — encontra strings longas no segmento de dados. Credenciais hardcoded aparecem aqui. Combinado com <code>objdump -d</code>, você tem as ferramentas básicas de análise estática de binários.</p>
+    </div>
+</section>

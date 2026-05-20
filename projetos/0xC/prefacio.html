@@ -1,0 +1,38 @@
+<header style="padding-top:1rem">
+    <h1>0xC_ Deep Dive Lab</h1>
+    <span class="ch-subtitle">// Laboratório de Engenharia de Baixo Nível e Segurança Operacional em C</span>
+</header>
+
+<section>
+    <h2>Por que Baixo Nível ainda importa?</h2>
+    <p>
+        Em 2026, a maioria dos desenvolvedores programa com abstrações sobre abstrações: frameworks que escondem o garbage collector que esconde o heap que esconde o sistema de memória virtual que esconde os registradores da CPU. Isso não é um problema — até ser.
+    </p>
+    <p>
+        Bugs de segurança críticos — <strong>buffer overflows, use-after-free, double-free, integer overflows</strong> — continuam sendo as principais classes de vulnerabilidade exploradas em produção. CVEs com CVSS 9.8 em kernels, navegadores e bibliotecas de rede. Todos têm a mesma raiz: o programador não sabia exatamente o que o hardware estava fazendo.
+    </p>
+
+    <h2>O que este laboratório cobre</h2>
+    <p>
+        Este não é um curso de sintaxe. Cada módulo explica o que acontece <strong>fisicamente</strong>: como a CPU alocou o stack frame, qual instrução Assembly foi emitida, como o linker resolveu os símbolos. C é a lupa que torna esse mecanismo visível.
+    </p>
+    <p>
+        A grade curricular vai do zero absoluto — a estrutura mínima de um binário ELF — até ponteiros de função e a base para construção de sistemas embarcados (RTOS). Cada capítulo termina com um vetor de ataque real derivado do conteúdo, para que a teoria e a segurança caminhem juntas.
+    </p>
+
+    <h2>Como estudar</h2>
+    <p>
+        Não leia passivamente. Cada bloco de código foi escrito para ser compilado e inspecionado. Use <code>gcc -O0 -g</code> e examine com <code>gdb</code> ou <code>objdump -d</code>. Quando possível, rode em Linux nativo ou WSL2 — o comportamento de memória é determinístico e auditável.
+    </p>
+    <div class="info-box note">
+        <p><strong>// Convenção de Código</strong> — Todos os exemplos compilam com: <code>gcc -Wall -Wextra -O0 -g -o output file.c</code>. Warnings são features, não ruído.</p>
+    </div>
+
+    <h2>A filosofia deste lab</h2>
+    <p>
+        Dominar C não é sobre usar C em produção. É sobre ter um modelo mental preciso de como a memória funciona. Com esse modelo, você escreve Python mais seguro, audita Rust com mais confiança e lê um CVE sem precisar do artigo de explicação.
+    </p>
+    <p>
+        Seja bem-vindo ao Deep Dive.
+    </p>
+</section>

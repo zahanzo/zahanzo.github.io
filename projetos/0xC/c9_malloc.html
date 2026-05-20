@@ -1,0 +1,128 @@
+<header>
+    <h1>0x09 · malloc(), Heap e Memory Leaks</h1>
+    <span class="ch-subtitle">// Alocação dinâmica, ciclo de vida do Heap, fragmentação e free()</span>
+</header>
+
+<section>
+    <h2>Por que o Heap existe?</h2>
+    <p>
+        A Stack tem duas limitações fundamentais: tamanho fixo (típico: 8MB) e ciclo de vida vinculado ao escopo da função. Se você precisa de um array cujo tamanho só é conhecido em runtime, ou de dados que devem sobreviver ao retorno de uma função, precisa da <strong>memória dinâmica — o Heap</strong>.
+    </p>
+    <p>
+        O Heap é uma região do espaço de endereçamento do processo que cresce para cima (endereços crescentes) conforme solicitado. O gerenciamento é manual: você pede blocos com <code>malloc()</code> e deve devolvê-los com <code>free()</code>.
+    </p>
+
+    <h2>malloc() — Memory ALLOCate</h2>
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>malloc_basico.c</span></div>
+        <pre><code><span class="pp">#include</span> <span class="str">&lt;stdio.h&gt;</span>
+<span class="pp">#include</span> <span class="str">&lt;stdlib.h&gt;</span>   <span class="cmt">/* malloc, calloc, realloc, free */</span>
+
+<span class="kw">int</span> <span class="fn">main</span>(<span class="kw">void</span>) {
+    <span class="cmt">/* Aloca 10 ints no heap (10 * 4 = 40 bytes) */</span>
+    <span class="kw">int</span> *arr = (<span class="kw">int</span>*) <span class="fn">malloc</span>(<span class="num">10</span> * <span class="kw">sizeof</span>(<span class="kw">int</span>));
+
+    <span class="cmt">/* SEMPRE verifique o retorno — malloc pode retornar NULL */</span>
+    <span class="kw">if</span> (arr == NULL) {
+        <span class="fn">fprintf</span>(stderr, <span class="str">"[ERRO] Falha na alocação.\n"</span>);
+        <span class="kw">return</span> <span class="num">1</span>;
+    }
+
+    <span class="cmt">/* Inicializa (malloc NÃO zera a memória — conteúdo é lixo) */</span>
+    <span class="kw">for</span> (<span class="kw">int</span> i = <span class="num">0</span>; i < <span class="num">10</span>; i++) {
+        arr[i] = i * i;
+    }
+
+    <span class="kw">for</span> (<span class="kw">int</span> i = <span class="num">0</span>; i < <span class="num">10</span>; i++) {
+        <span class="fn">printf</span>(<span class="str">"arr[%d] = %d\n"</span>, i, arr[i]);
+    }
+
+    <span class="fn">free</span>(arr);  <span class="cmt">/* devolve o bloco ao heap — OBRIGATÓRIO */</span>
+    arr = NULL; <span class="cmt">/* boa prática: evita use-after-free */</span>
+    <span class="kw">return</span> <span class="num">0</span>;
+}</code></pre>
+    </div>
+
+    <h2>calloc e realloc</h2>
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>calloc_realloc.c</span></div>
+        <pre><code><span class="cmt">/* calloc: aloca E zera a memória (n elementos de tamanho size) */</span>
+<span class="kw">int</span> *zeros = (<span class="kw">int</span>*) <span class="fn">calloc</span>(<span class="num">10</span>, <span class="kw">sizeof</span>(<span class="kw">int</span>));
+<span class="cmt">/* zeros[0..9] == 0 garantido */</span>
+
+<span class="cmt">/* realloc: redimensiona um bloco existente */</span>
+<span class="kw">int</span> *arr = (<span class="kw">int</span>*) <span class="fn">malloc</span>(<span class="num">5</span> * <span class="kw">sizeof</span>(<span class="kw">int</span>));
+<span class="kw">if</span> (!arr) { <span class="cmt">/* handle error */</span> }
+
+<span class="cmt">/* Cresce para 10 elementos — pode mover o bloco na memória! */</span>
+<span class="kw">int</span> *novo = (<span class="kw">int</span>*) <span class="fn">realloc</span>(arr, <span class="num">10</span> * <span class="kw">sizeof</span>(<span class="kw">int</span>));
+<span class="kw">if</span> (!novo) {
+    <span class="fn">free</span>(arr); <span class="cmt">/* realloc falhou — arr ainda é válido */</span>
+    <span class="kw">return</span> <span class="num">1</span>;
+}
+arr = novo; <span class="cmt">/* arr antigo pode ter sido movido/liberado */</span></code></pre>
+    </div>
+
+    <div class="info-box warning">
+        <p><strong>⚠ Padrão perigoso com realloc:</strong> <code>arr = realloc(arr, novo_tamanho)</code> — se realloc falhar, retorna NULL e arr perde a referência ao bloco original → memory leak. Sempre use uma variável temporária para o retorno do realloc.</p>
+    </div>
+
+    <h2>O que o heap manager faz internamente</h2>
+    <p>
+        A libc mantém metadados junto com cada bloco alocado. Antes dos bytes que você recebe de malloc há um cabeçalho (header) que guarda o <strong>tamanho do bloco</strong> e flags de status. Quando você chama <code>free(ptr)</code>, a libc usa esses metadados para marcar o bloco como disponível e possivelmente fundir com blocos adjacentes livres (<em>coalescing</em>).
+    </p>
+
+    <div class="mem-diagram">
+        <div class="mem-row"><span class="mem-addr">Heap (baixo→alto)</span></div>
+        <div class="mem-row"><span class="mem-addr">[ header ]</span><span class="mem-val">sz=40|used</span><span class="mem-label">← metadados do bloco A</span></div>
+        <div class="mem-row"><span class="mem-addr">[ data   ]</span><span class="mem-val">10 ints</span><span class="mem-label">← ptr retornado por malloc ↑</span></div>
+        <div class="mem-row"><span class="mem-addr">[ header ]</span><span class="mem-val">sz=24|free</span><span class="mem-label">← bloco B (liberado)</span></div>
+        <div class="mem-row"><span class="mem-addr">[ data   ]</span><span class="mem-val">???</span><span class="mem-label">← lixo (livre)</span></div>
+        <div class="mem-row"><span class="mem-addr">[ header ]</span><span class="mem-val">sz=16|used</span><span class="mem-label">← bloco C (em uso)</span></div>
+        <div class="mem-row"><span class="mem-addr">brk ────</span><span class="mem-label">← topo atual do heap</span></div>
+    </div>
+
+    <h2>Memory Leaks — vazamento de memória</h2>
+    <p>
+        Um <strong>memory leak</strong> ocorre quando um bloco alocado com malloc perde todos os ponteiros que o referenciam antes de ser liberado com free. O bloco permanece reservado até o processo terminar — inútil e inacessível.
+    </p>
+
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>memory_leak.c</span></div>
+        <pre><code><span class="kw">void</span> <span class="fn">funcao_com_leak</span>(<span class="kw">void</span>) {
+    <span class="kw">int</span> *p = (<span class="kw">int</span>*) <span class="fn">malloc</span>(<span class="num">1024</span> * <span class="kw">sizeof</span>(<span class="kw">int</span>));
+    <span class="kw">if</span> (!p) <span class="kw">return</span>;
+
+    <span class="cmt">/* ... usa p ... */</span>
+
+    <span class="kw">return</span>; <span class="cmt">/* BUG: esqueceu free(p)! 4KB vazam por chamada. */</span>
+}
+
+<span class="kw">int</span> <span class="fn">main</span>(<span class="kw">void</span>) {
+    <span class="kw">for</span> (<span class="kw">int</span> i = <span class="num">0</span>; i < <span class="num">1000000</span>; i++) {
+        <span class="fn">funcao_com_leak</span>(); <span class="cmt">/* ~4GB de leak! */</span>
+    }
+    <span class="kw">return</span> <span class="num">0</span>;
+}</code></pre>
+    </div>
+
+    <h2>Double-Free e Use-After-Free</h2>
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>heap_bugs.c</span></div>
+        <pre><code><span class="kw">int</span> *p = (<span class="kw">int</span>*) <span class="fn">malloc</span>(<span class="kw">sizeof</span>(<span class="kw">int</span>));
+*p = <span class="num">42</span>;
+
+<span class="fn">free</span>(p);
+<span class="fn">free</span>(p);  <span class="cmt">/* DOUBLE-FREE → corrompe estruturas internas do heap */</span>
+
+*p = <span class="num">1</span>;   <span class="cmt">/* USE-AFTER-FREE → undefined behavior, potencial exploit */</span></code></pre>
+    </div>
+
+    <div class="info-box danger">
+        <p><strong>⚠ Heap exploitation:</strong> Double-free e use-after-free são classes de vulnerabilidade exploráveis. Um atacante pode manipular as estruturas internas do heap allocator para forjar um write-what-where primitive. Ferramentas: <code>valgrind ./binario</code> para detectar leaks e usos inválidos; <code>-fsanitize=address</code> para detecção em compile-time.</p>
+    </div>
+
+    <div class="info-box tip">
+        <p><strong>// Detecção automática:</strong> <code>valgrind --leak-check=full --show-leak-kinds=all ./programa</code> — reporta cada bloco perdido com o stack trace de onde foi alocado. Essencial em qualquer projeto C com alocação dinâmica.</p>
+    </div>
+</section>

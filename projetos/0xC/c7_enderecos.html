@@ -1,0 +1,92 @@
+<header>
+    <h1>0x07 · Operador & e a RAM</h1>
+    <span class="ch-subtitle">// Endereços de memória, o operador unário & e leitura do mapa de memória</span>
+</header>
+
+<section>
+    <h2>O que é um endereço de memória?</h2>
+    <p>
+        A RAM é organizada como um enorme array de bytes. Cada byte tem um número único — seu <strong>endereço</strong>. Em um sistema de 64 bits, os endereços são inteiros de 64 bits (mas na prática, apenas 48-57 bits são usados, dependendo da CPU e S.O.).
+    </p>
+    <p>
+        Quando você declara <code>int x = 42;</code>, o compilador reserva 4 bytes consecutivos em alguma região da memória (stack, no caso de variáveis locais) e associa o nome <code>x</code> ao primeiro desses bytes. O <strong>endereço de x</strong> é o número desse primeiro byte.
+    </p>
+
+    <h2>O operador unário &amp; — "endereço de"</h2>
+    <p>
+        O operador <code>&</code> (ampersand), quando aplicado a uma variável, retorna o <strong>endereço de memória</strong> onde ela está armazenada. O resultado é um <em>ponteiro</em> — um inteiro que representa uma posição na RAM.
+    </p>
+
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>endereco_demo.c</span></div>
+        <pre><code><span class="pp">#include</span> <span class="str">&lt;stdio.h&gt;</span>
+
+<span class="kw">int</span> <span class="fn">main</span>(<span class="kw">void</span>) {
+    <span class="kw">int</span>    x  = <span class="num">42</span>;
+    <span class="kw">double</span> pi = <span class="num">3.14159</span>;
+    <span class="kw">char</span>   c  = <span class="str">'A'</span>;
+
+    <span class="fn">printf</span>(<span class="str">"valor  de x  : %d\n"</span>,   x);
+    <span class="fn">printf</span>(<span class="str">"endereço de x  : %p\n"</span>, (<span class="kw">void</span>*) &amp;x);
+
+    <span class="fn">printf</span>(<span class="str">"endereço de pi : %p\n"</span>, (<span class="kw">void</span>*) &amp;pi);
+    <span class="fn">printf</span>(<span class="str">"endereço de c  : %p\n"</span>, (<span class="kw">void</span>*) &amp;c);
+
+    <span class="cmt">/* Note que pi está 8 bytes abaixo de x (double = 8 bytes)
+       e c está 1 byte abaixo de pi (char = 1 byte).
+       O compilador pode inserir padding — os offsets podem variar. */</span>
+    <span class="kw">return</span> <span class="num">0</span>;
+}</code></pre>
+    </div>
+
+    <p>Saída típica no Linux x86-64:</p>
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">output</span><span>stdout</span></div>
+        <pre><code>valor  de x    : 42
+endereço de x  : 0x7ffd3a4c5b2c
+endereço de pi : 0x7ffd3a4c5b20
+endereço de c  : 0x7ffd3a4c5b1f</code></pre>
+    </div>
+
+    <h2>Lendo a chave hexadecimal</h2>
+    <p>
+        <code>0x7ffd3a4c5b2c</code> é um endereço virtual na região da stack (endereços altos em Linux, com o prefixo <code>0x7f...</code>). Note que:
+    </p>
+    <p><code>x</code> está em <code>...5b2c</code>. <code>pi</code> está em <code>...5b20</code> — diferença de 12 bytes (4 bytes de x + 8 bytes de pi com alinhamento). <code>c</code> está em <code>...5b1f</code> — 1 byte abaixo de pi.</p>
+
+    <div class="mem-diagram">
+        <div class="mem-row"><span class="mem-addr">0x7fff...5b2c</span><span class="mem-val">2A 00 00 00</span><span class="mem-label">← x = 42 (0x2A, little-endian)</span></div>
+        <div class="mem-row"><span class="mem-addr">0x7fff...5b20</span><span class="mem-val">6E 86 1B F0 F9 21 09 40</span><span class="mem-label">← pi = 3.14159 (IEEE 754)</span></div>
+        <div class="mem-row"><span class="mem-addr">0x7fff...5b1f</span><span class="mem-val">41</span><span class="mem-label">← c = 'A' (0x41 em ASCII)</span></div>
+    </div>
+
+    <h2>Little-Endian — a ordem dos bytes na RAM</h2>
+    <p>
+        Arquiteturas x86/x86-64 usam <strong>little-endian</strong>: o byte menos significativo (LSB) é armazenado no endereço mais baixo. Então o inteiro <code>42</code> (0x0000002A) é armazenado como: <code>[2A] [00] [00] [00]</code> nos bytes consecutivos — do LSB para o MSB.
+    </p>
+    <p>
+        Em protocolos de rede (TCP/IP), usa-se <strong>big-endian</strong> (network byte order). As funções <code>htonl()</code> e <code>ntohl()</code> convertem entre os formatos. Esse detalhe causou bugs históricos em implementações de protocolos.
+    </p>
+
+    <h2>Inspecionando endereços com /proc/maps</h2>
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">shell</span><span>Linux — mapa de memória de um processo</span></div>
+        <pre><code><span class="cmt"># Encontre o PID do seu processo e leia o mapa</span>
+cat /proc/$(pidof seu_programa)/maps
+
+<span class="cmt"># Saída típica:</span>
+<span class="cmt"># 00400000-00401000 r-xp  .text  (código executável)</span>
+<span class="cmt"># 00601000-00602000 rw-p  .data  (dados globais)</span>
+<span class="cmt"># 7f8b1234-7f8c5678 r-xp  libc.so (biblioteca dinâmica)</span>
+<span class="cmt"># 7ffd0000-7fff0000 rw-p  [stack]</span></code></pre>
+    </div>
+
+    <div class="info-box note">
+        <p><strong>// ASLR — Address Space Layout Randomization:</strong> Se você rodar o mesmo programa duas vezes, os endereços da stack serão diferentes. O Linux randomiza o layout do espaço de endereçamento em cada execução para dificultar exploits que dependem de endereços fixos. Desative para estudo: <code>echo 0 | sudo tee /proc/sys/kernel/randomize_va_space</code>.</p>
+    </div>
+
+    <h2>scanf revisitado — por que passar &amp;variavel</h2>
+    <p>
+        Agora fica claro por que <code>scanf("%d", &amp;numero)</code> precisa do <code>&</code>: scanf precisa saber <strong>onde escrever</strong> o valor lido. Como C passa argumentos por valor, se você passasse apenas <code>numero</code>, scanf receberia uma cópia do valor e não conseguiria modificar a variável original. O <code>&numero</code> passa o endereço — e scanf escreve diretamente naquele endereço.
+    </p>
+</section>

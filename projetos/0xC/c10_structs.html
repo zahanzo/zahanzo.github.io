@@ -1,0 +1,142 @@
+<header>
+    <h1>0x0A · Structs e Memory Padding</h1>
+    <span class="ch-subtitle">// Tipos compostos, alinhamento de memória, padding e passagem por referência</span>
+</header>
+
+<section>
+    <h2>O que são Structs?</h2>
+    <p>
+        Uma <code>struct</code> é um tipo composto que agrupa variáveis de tipos diferentes sob um único nome. Enquanto um array armazena elementos do <em>mesmo</em> tipo, uma struct pode combinar <code>int</code>, <code>char</code>, <code>double</code> e ponteiros em um único bloco de memória.
+    </p>
+
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>struct_basico.c</span></div>
+        <pre><code><span class="pp">#include</span> <span class="str">&lt;stdio.h&gt;</span>
+<span class="pp">#include</span> <span class="str">&lt;string.h&gt;</span>
+
+<span class="cmt">/* Definição do tipo — não aloca memória */</span>
+<span class="kw">typedef struct</span> {
+    <span class="kw">unsigned int</span>  id;
+    <span class="kw">char</span>          nome[32];
+    <span class="kw">double</span>        saldo;
+    <span class="kw">int</span>           ativo;
+} Conta;
+
+<span class="kw">int</span> <span class="fn">main</span>(<span class="kw">void</span>) {
+    Conta c1;                          <span class="cmt">/* declara na stack */</span>
+
+    c1.id    = <span class="num">1001</span>;
+    <span class="fn">strncpy</span>(c1.nome, <span class="str">"Robert Lages"</span>, <span class="kw">sizeof</span>(c1.nome) - <span class="num">1</span>);
+    c1.nome[<span class="kw">sizeof</span>(c1.nome) - <span class="num">1</span>] = <span class="str">'\0'</span>; <span class="cmt">/* garante terminação */</span>
+    c1.saldo  = <span class="num">1500.75</span>;
+    c1.ativo  = <span class="num">1</span>;
+
+    <span class="fn">printf</span>(<span class="str">"ID: %u | Nome: %s | Saldo: R$%.2f\n"</span>,
+           c1.id, c1.nome, c1.saldo);
+    <span class="fn">printf</span>(<span class="str">"sizeof(Conta) = %zu bytes\n"</span>, <span class="kw">sizeof</span>(Conta));
+
+    <span class="kw">return</span> <span class="num">0</span>;
+}</code></pre>
+    </div>
+
+    <h2>Memory Padding e Alinhamento</h2>
+    <p>
+        A CPU x86-64 acessa a memória de forma mais eficiente quando os dados estão em endereços <strong>alinhados</strong> ao seu tamanho — um <code>double</code> (8 bytes) deve estar em um endereço múltiplo de 8, um <code>int</code> (4 bytes) em múltiplo de 4. Para garantir isso, o compilador insere bytes de preenchimento (<strong>padding</strong>) entre os membros da struct.
+    </p>
+
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>padding_demo.c</span></div>
+        <pre><code><span class="cmt">/* Layout com padding ruim (36 bytes) */</span>
+<span class="kw">struct</span> Ruim {
+    <span class="kw">char</span>   a;    <span class="cmt">/* 1 byte  + 7 bytes padding */</span>
+    <span class="kw">double</span> b;    <span class="cmt">/* 8 bytes */</span>
+    <span class="kw">char</span>   c;    <span class="cmt">/* 1 byte  + 7 bytes padding */</span>
+    <span class="kw">double</span> d;    <span class="cmt">/* 8 bytes */</span>
+}; <span class="cmt">/* sizeof = 32 bytes (com padding) */</span>
+
+<span class="cmt">/* Layout otimizado — maiores primeiro (24 bytes) */</span>
+<span class="kw">struct</span> Bom {
+    <span class="kw">double</span> b;    <span class="cmt">/* 8 bytes */</span>
+    <span class="kw">double</span> d;    <span class="cmt">/* 8 bytes */</span>
+    <span class="kw">char</span>   a;    <span class="cmt">/* 1 byte */</span>
+    <span class="kw">char</span>   c;    <span class="cmt">/* 1 byte  + 6 bytes padding final */</span>
+}; <span class="cmt">/* sizeof = 24 bytes (com padding) */</span></code></pre>
+    </div>
+
+    <div class="mem-diagram">
+        <div class="mem-row"><span class="mem-addr">struct Ruim:</span></div>
+        <div class="mem-row"><span class="mem-addr">offset 0</span><span class="mem-val">a (1B)</span></div>
+        <div class="mem-row"><span class="mem-addr">offset 1-7</span><span class="mem-val">PADDING</span><span class="mem-label">← 7 bytes desperdiçados para alinhar b</span></div>
+        <div class="mem-row"><span class="mem-addr">offset 8</span><span class="mem-val">b (8B)</span></div>
+        <div class="mem-row"><span class="mem-addr">offset 16</span><span class="mem-val">c (1B)</span></div>
+        <div class="mem-row"><span class="mem-addr">offset 17-23</span><span class="mem-val">PADDING</span><span class="mem-label">← 7 bytes desperdiçados para alinhar d</span></div>
+        <div class="mem-row"><span class="mem-addr">offset 24</span><span class="mem-val">d (8B)</span></div>
+        <div class="mem-row"><span class="mem-addr">Total: 32B</span><span class="mem-label">← 14 bytes de padding!</span></div>
+    </div>
+
+    <h2>Verificando o layout real com offsetof</h2>
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>offsetof_demo.c</span></div>
+        <pre><code><span class="pp">#include</span> <span class="str">&lt;stddef.h&gt;</span>  <span class="cmt">/* offsetof */</span>
+<span class="pp">#include</span> <span class="str">&lt;stdio.h&gt;</span>
+
+<span class="kw">typedef struct</span> {
+    <span class="kw">char</span>   flag;
+    <span class="kw">int</span>    valor;
+    <span class="kw">double</span> preco;
+} Produto;
+
+<span class="kw">int</span> <span class="fn">main</span>(<span class="kw">void</span>) {
+    <span class="fn">printf</span>(<span class="str">"sizeof  : %zu\n"</span>, <span class="kw">sizeof</span>(Produto));
+    <span class="fn">printf</span>(<span class="str">"flag  @ +%zu\n"</span>, <span class="fn">offsetof</span>(Produto, flag));
+    <span class="fn">printf</span>(<span class="str">"valor @ +%zu\n"</span>, <span class="fn">offsetof</span>(Produto, valor));
+    <span class="fn">printf</span>(<span class="str">"preco @ +%zu\n"</span>, <span class="fn">offsetof</span>(Produto, preco));
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+<span class="cmt">/* Output:
+   sizeof  : 16
+   flag  @ +0
+   valor @ +4   ← 3 bytes de padding entre flag e valor
+   preco @ +8                                            */</span></code></pre>
+    </div>
+
+    <h2>Passagem por referência com structs</h2>
+    <p>
+        Passar uma struct por valor copia <strong>todos os bytes</strong> para o stack frame da função chamada. Para structs grandes, isso é custoso. Passe por ponteiro:
+    </p>
+
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>struct_ponteiro.c</span></div>
+        <pre><code><span class="kw">void</span> <span class="fn">depositar</span>(Conta *c, <span class="kw">double</span> valor) {
+    <span class="kw">if</span> (c == NULL || valor <= <span class="num">0</span>) <span class="kw">return</span>;
+    c->saldo += valor; <span class="cmt">/* c->campo == (*c).campo */</span>
+}
+
+<span class="cmt">/* No heap: */</span>
+Conta *nova = (<span class="kw">Conta</span>*) <span class="fn">malloc</span>(<span class="kw">sizeof</span>(Conta));
+<span class="kw">if</span> (!nova) { <span class="cmt">/* handle error */</span> }
+nova->id    = <span class="num">2001</span>;
+nova->saldo = <span class="num">0.0</span>;
+<span class="fn">depositar</span>(nova, <span class="num">500.0</span>);
+<span class="fn">printf</span>(<span class="str">"Saldo: %.2f\n"</span>, nova->saldo); <span class="cmt">/* 500.00 */</span>
+<span class="fn">free</span>(nova); nova = NULL;</code></pre>
+    </div>
+
+    <div class="info-box note">
+        <p><strong>// O operador ->:</strong> <code>ptr->campo</code> é syntactic sugar para <code>(*ptr).campo</code>. Ele desreferencia o ponteiro <em>e</em> acessa o campo em uma operação. Sempre use <code>-></code> com ponteiros para struct — é mais legível e o compilador gera o mesmo código.</p>
+    </div>
+
+    <h2>__attribute__((packed)) — removendo o padding</h2>
+    <p>
+        Em protocolos de rede, drivers e parsing de formatos binários, você precisa que a struct espelhe exatamente o layout do wire/disco, sem padding. O atributo <code>packed</code> elimina o padding, mas acessa desalinhados podem ser mais lentos ou gerar faults em arquiteturas estritas (ARM, por exemplo).
+    </p>
+
+    <div class="code-block">
+        <div class="code-block-header"><span class="lang-tag">c</span><span>packed_struct.c</span></div>
+        <pre><code><span class="kw">typedef struct</span> __attribute__((packed)) {
+    <span class="ty">uint8_t</span>  tipo;    <span class="cmt">/* 1 byte */</span>
+    <span class="ty">uint16_t</span> tamanho; <span class="cmt">/* 2 bytes — sem padding! */</span>
+    <span class="ty">uint32_t</span> payload; <span class="cmt">/* 4 bytes */</span>
+} Pacote; <span class="cmt">/* sizeof = 7, não 8 */</span></code></pre>
+    </div>
+</section>
