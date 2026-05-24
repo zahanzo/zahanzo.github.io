@@ -2,16 +2,19 @@
     {
         "title": "0xC_ Deep Dive Lab",
         "description": "Um livro interativo focado na engenharia de baixo nível, arquitetura de memória (Stack/Heap) e contramedidas de segurança em C puro.",
-        "url": "projetos/curso-c.html"
+        "description_en": "An interactive book focused on low-level engineering, memory architecture (Stack/Heap), and security countermeasures in pure C.",
+        "url": "projects/curso-c.html"
     },
     {
         "title": "L.I.A. Framework",
         "description": "Assistente Inteligente Local. Arquitetura modular integrando IA, visão computacional e servidores MCP.",
-        "url": "projetos/lia.html"
+        "description_en": "Local Intelligent Assistant. Modular architecture integrating AI, computer vision, and MCP servers.",
+        "url": "projects/lia.html"
     },
     {
         "title": "GhostShell",
         "description": "Implementações e testes focados em segurança, persistência e análise de vulnerabilidades em sistemas Windows.",
-        "url": "projetos/ghostshell.html"
+        "description_en": "Implementations and tests focused on security, persistence, and vulnerability analysis on Windows systems.",
+        "url": "projects/ghostshell.html"
     }
 ]

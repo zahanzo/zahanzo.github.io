@@ -7,48 +7,45 @@
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="stylesheet" href="style.css">
     <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
-    <style>.page-isolada { padding-top: 120px; min-height: 100vh; }</style>
 </head>
 <body>
 
-    <!-- ========================================== -->
-    <!-- NAVEGAÇÃO FIXA (Fica fora do app-root)     -->
-    <!-- ========================================== -->
     <nav class="navbar">
         <div class="logo"><span>0x</span>Robert<span>_</span></div>
         <ul class="nav-links">
-            <li><a href="index.html">Sobre</a></li>
-            <li><a href="curriculo.html">Currículo</a></li>
-            <li><a href="projetos.html">Projetos</a></li>
-            <li><a href="posts.html" style="color: var(--accent);">Posts</a></li>
+            <li><a href="index.html" data-pt="Sobre" data-en="About">Sobre</a></li>
+            <li><a href="resume.html" class="active" data-pt="Currículo" data-en="Resume">Currículo</a></li>
+            <li><a href="projects.html" data-pt="Projetos" data-en="Projects">Projetos</a></li>
+            <li><a href="posts.html" class="active">Posts</a></li>
         </ul>
-        <div class="hamburger">
-            <i class='bx bx-menu'></i>
+        <div class="navbar-right">
+            <div class="lang-toggle">
+                <button class="lang-btn active" id="btn-pt">PT</button>
+                <button class="lang-btn" id="btn-en">EN</button>
+            </div>
+            <div class="hamburger"><i class='bx bx-menu'></i></div>
         </div>
     </nav>
 
-    <!-- ========================================== -->
-    <!-- ZONA DE INJEÇÃO (Tudo aqui muda via JS)    -->
-    <!-- ========================================== -->
     <main id="app-root">
         <section class="section page-isolada">
-            <h2 class="section-title">Artigos Técnicos</h2>
-            
+            <h2 class="section-title" data-pt="Artigos Técnicos" data-en="Technical Articles">Artigos Técnicos</h2>
+
             <div class="category-filters">
-                <button class="filter-btn active" data-filter="all">Todos</button>
-                <button class="filter-btn" data-filter="low-level">Baixo Nível</button>
-                <button class="filter-btn" data-filter="ia">L.I.A. & IA</button>
-                <button class="filter-btn" data-filter="engenharia">Engenharia</button>
+                <button class="filter-btn active" data-filter="all"
+                    data-pt="Todos" data-en="All">Todos</button>
+                <button class="filter-btn" data-filter="low-level"
+                    data-pt="Baixo Nível" data-en="Low Level">Baixo Nível</button>
+                <button class="filter-btn" data-filter="ia"
+                    data-pt="L.I.A. & IA" data-en="L.I.A. & AI">L.I.A. & IA</button>
+                <button class="filter-btn" data-filter="engenharia"
+                    data-pt="Engenharia" data-en="Engineering">Engenharia</button>
             </div>
 
-            <!-- O JavaScript injeta os cards do posts.json aqui -->
             <div class="posts-grid" id="posts-container"></div>
         </section>
     </main>
 
-    <!-- ========================================== -->
-    <!-- FOOTER E SCRIPTS FIXOS                     -->
-    <!-- ========================================== -->
     <footer>
         <p>&copy; 2026 Robert Souza Lages.</p>
     </footer>

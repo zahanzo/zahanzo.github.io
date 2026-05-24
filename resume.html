@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Currículo | Robert Souza Lages</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="stylesheet" href="style.css">
+    <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
+</head>
+<body>
+
+    <nav class="navbar">
+        <div class="logo"><span>0x</span>Robert<span>_</span></div>
+        <ul class="nav-links">
+            <li><a href="index.html" data-pt="Sobre" data-en="About">Sobre</a></li>
+            <li><a href="resume.html" class="active" data-pt="Currículo" data-en="Resume">Currículo</a></li>
+            <li><a href="projects.html" data-pt="Projetos" data-en="Projects">Projetos</a></li>
+            <li><a href="posts.html">Posts</a></li>
+        </ul>
+        <div class="navbar-right">
+            <div class="lang-toggle">
+                <button class="lang-btn active" id="btn-pt">PT</button>
+                <button class="lang-btn" id="btn-en">EN</button>
+            </div>
+            <div class="hamburger"><i class='bx bx-menu'></i></div>
+        </div>
+    </nav>
+
+    <main id="app-root">
+        <section class="section page-isolada">
+            <div class="resume-document">
+
+                <!-- HEADER -->
+                <header class="resume-header">
+                    <h1>Robert Souza Lages</h1>
+                    <h2 data-pt="Desenvolvedor de Software | Engenharia de Baixo Nível &amp; IA"
+                        data-en="Software Developer | Low-Level Engineering &amp; AI">
+                        Desenvolvedor de Software | Engenharia de Baixo Nível &amp; IA
+                    </h2>
+                    <div class="contact-info">
+                        <span><i class='bx bx-map'></i> Pelotas, RS — Brasil</span>
+                        <span><i class='bx bxl-github'></i> github.com/zahanzo</span>
+                        <span><i class='bx bx-envelope'></i> rsouzalages@gmail.com</span>
+                    </div>
+                </header>
+
+                <!-- RESUMO PROFISSIONAL -->
+                <div class="cv-section">
+                    <h3 data-pt="Resumo Profissional" data-en="Professional Summary">Resumo Profissional</h3>
+                    <p class="lang-pt">
+                        Desenvolvedor focado em C, C++, Assembly e Python, com sólido interesse em arquitetura de sistemas, engenharia reversa e segurança. Possuo vivência prática na indústria operando maquinário de alta complexidade, o que me proporcionou uma visão aguçada para resolução de problemas críticos e metrologia. Atualmente, desenvolvo o L.I.A. Framework e busco integrar a robustez da engenharia de baixo nível ao desenvolvimento de software moderno.
+                    </p>
+                    <p class="lang-en" style="display:none">
+                        Developer focused on C, C++, Assembly, and Python, with strong interests in systems architecture, reverse engineering, and security. My hands-on industrial experience operating high-complexity machinery sharpened my eye for critical problem-solving and metrology. Currently developing the L.I.A. Framework, I aim to integrate the robustness of low-level engineering with modern software development.
+                    </p>
+                </div>
+
+                <!-- EXPERIÊNCIA -->
+                <div class="cv-section">
+                    <h3 data-pt="Experiência Profissional" data-en="Professional Experience">Experiência Profissional</h3>
+
+                    <div class="cv-item">
+                        <div class="cv-item-header">
+                            <h4 data-pt="Operação Técnica e Serviços Gerais"
+                                data-en="Technical Operations &amp; General Services">
+                                Operação Técnica e Serviços Gerais
+                            </h4>
+                            <span class="date" data-pt="02/2024 — Atual" data-en="02/2024 — Present">02/2024 — Atual</span>
+                        </div>
+                        <h5>Josapar | Pelotas, RS</h5>
+                        <ul class="lang-pt">
+                            <li>Atuação nas rotinas de serviços gerais nos setores de parboilização e engenho de arroz, garantindo o fluxo contínuo e a eficiência da produção.</li>
+                            <li>Operação e monitoramento de processos em maquinários industriais de precisão e grande porte, como autoclaves e selecionadoras ópticas (Bühler Sortex).</li>
+                            <li>Aplicação de raciocínio lógico para resolução de problemas operacionais em tempo real, mantendo forte disciplina e estrita observância a normas de segurança em um ambiente de alta criticidade.</li>
+                        </ul>
+                        <ul class="lang-en" style="display:none">
+                            <li>Performed general services routines in the parboilization and rice mill sectors, ensuring continuous production flow and operational efficiency.</li>
+                            <li>Operated and monitored precision large-scale industrial machinery, including autoclaves and optical sorters (Bühler Sortex).</li>
+                            <li>Applied logical reasoning for real-time operational problem-solving, maintaining strong discipline and strict compliance with safety standards in a high-criticality environment.</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- PROJETOS -->
+                <div class="cv-section">
+                    <h3 data-pt="Projetos Relevantes" data-en="Relevant Projects">Projetos Relevantes</h3>
+
+                    <div class="cv-item">
+                        <div class="cv-item-header">
+                            <h4>SigHunter — <span data-pt="Motor de Análise de Binários" data-en="Binary Analysis Engine">Motor de Análise de Binários</span></h4>
+                            <span class="date">2026</span>
+                        </div>
+                        <p class="lang-pt">
+                            Projeto Final desenvolvido para o CS50x de Harvard. Um motor de análise de binários em C++ focado em engenharia reversa, bypass de ofuscação (XOR) e varredura dinâmica de memória (RAM) para identificação de artefatos maliciosos e packers como UPX.
+                        </p>
+                        <p class="lang-en" style="display:none">
+                            Final project developed for Harvard's CS50x. A C++ binary analysis engine focused on reverse engineering, XOR obfuscation bypass, and dynamic memory (RAM) scanning to identify malicious artifacts and packers such as UPX.
+                        </p>
+                    </div>
+
+                    <div class="cv-item">
+                        <div class="cv-item-header">
+                            <h4>L.I.A. Framework <span style="font-size:0.8em;color:var(--text-dim)">(Local Intelligent Assistant)</span></h4>
+                            <span class="date">2026</span>
+                        </div>
+                        <p class="lang-pt">
+                            Projeto de arquitetura modular para execução de Inteligência Artificial em ambiente local com foco em privacidade. O ecossistema é projetado para integrar nativamente o Model Context Protocol (MCP), permitindo a expansão de ferramentas e comunicação eficiente entre agentes e recursos do sistema.
+                        </p>
+                        <p class="lang-en" style="display:none">
+                            Modular architecture project for running AI locally with a focus on privacy. The ecosystem is designed to natively integrate the Model Context Protocol (MCP), enabling tool expansion and efficient communication between agents and system resources.
+                        </p>
+                    </div>
+
+                    <div class="cv-item">
+                        <div class="cv-item-header">
+                            <h4 data-pt="Rebuild de Motor de Combustão (Mecânica de Precisão)"
+                                data-en="Combustion Engine Rebuild (Precision Mechanics)">
+                                Rebuild de Motor de Combustão (Mecânica de Precisão)
+                            </h4>
+                            <span class="date">2026</span>
+                        </div>
+                        <p class="lang-pt">
+                            Desmontagem, retífica e montagem completa de um motor Honda CG 150. Projeto que atesta habilidades em leitura de manuais técnicos, metrologia, tolerâncias físicas e compreensão prática do funcionamento de sistemas mecânicos complexos.
+                        </p>
+                        <p class="lang-en" style="display:none">
+                            Full disassembly, machining, and reassembly of a Honda CG 150 engine. A project demonstrating skills in technical manual reading, metrology, physical tolerances, and a hands-on understanding of complex mechanical systems.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- FORMAÇÃO -->
+                <div class="cv-section">
+                    <h3 data-pt="Formação Acadêmica" data-en="Academic Background">Formação Acadêmica</h3>
+
+                    <div class="cv-item">
+                        <div class="cv-item-header">
+                            <h4 data-pt="Graduação em Análise e Desenvolvimento de Sistemas (ADS)"
+                                data-en="Bachelor's in Information Systems Analysis &amp; Development">
+                                Graduação em Análise e Desenvolvimento de Sistemas (ADS)
+                            </h4>
+                            <span class="date" data-pt="Em andamento" data-en="In progress">Em andamento</span>
+                        </div>
+                        <h5>Uniscenad | Pelotas, RS</h5>
+                        <p class="lang-pt">
+                            Foco atual no domínio de fundamentos de programação, algoritmos e arquitetura de computadores. Com objetivo acadêmico futuro voltado para um Mestrado em Ciência da Computação.
+                        </p>
+                        <p class="lang-en" style="display:none">
+                            Current focus on programming fundamentals, algorithms, and computer architecture. Future academic goal: a Master's degree in Computer Science.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- CERTIFICAÇÕES -->
+                <div class="cv-section">
+                    <h3 data-pt="Certificações e Cursos Complementares"
+                        data-en="Certifications &amp; Complementary Courses">
+                        Certificações e Cursos Complementares
+                    </h3>
+
+                    <div class="cv-item">
+                        <div class="cv-item-header">
+                            <h4>CS50x: Introduction to Computer Science</h4>
+                            <span class="date" data-pt="Mai/2026" data-en="May/2026">Mai/2026</span>
+                        </div>
+                        <h5>Harvard University</h5>
+                        <p class="lang-pt">
+                            Formação intensiva e rigorosa em Ciência da Computação, englobando estruturas de dados, algoritmos, gerenciamento de memória e desenvolvimento de software utilizando C, Python e SQL.
+                        </p>
+                        <p class="lang-en" style="display:none">
+                            Intensive and rigorous training in Computer Science, covering data structures, algorithms, memory management, and software development using C, Python, and SQL.
+                        </p>
+                    </div>
+
+                    <div class="cv-item">
+                        <div class="cv-item-header">
+                            <h4 data-pt="Análise de Dados e Inteligência de Negócios"
+                                data-en="Data Analysis and Business Intelligence">
+                                Análise de Dados e Inteligência de Negócios
+                            </h4>
+                            <span class="date" data-pt="Dez/2025" data-en="Dec/2025">Dez/2025</span>
+                        </div>
+                        <h5 data-pt="Gran Faculdade | 30 horas" data-en="Gran Faculdade | 30 hours">Gran Faculdade | 30 horas</h5>
+                        <p class="lang-pt">Capacitação voltada para a organização de dados e geração de insights para suporte à decisão.</p>
+                        <p class="lang-en" style="display:none">Training focused on data organization and insight generation to support business decision-making.</p>
+                    </div>
+
+                    <div class="cv-item">
+                        <div class="cv-item-header">
+                            <h4 data-pt="Engenharia Reversa" data-en="Reverse Engineering">Engenharia Reversa</h4>
+                            <span class="date" data-pt="Abr/2025" data-en="Apr/2025">Abr/2025</span>
+                        </div>
+                        <h5 data-pt="Faculdade VINCIT / Udemy | 9 horas" data-en="Faculdade VINCIT / Udemy | 9 hours">Faculdade VINCIT / Udemy | 9 horas</h5>
+                        <p class="lang-pt">Fundamentos de análise de binários e compreensão de estruturas de baixo nível.</p>
+                        <p class="lang-en" style="display:none">Fundamentals of binary analysis and understanding of low-level structures.</p>
+                    </div>
+                </div>
+
+                <!-- STACK -->
+                <div class="cv-section">
+                    <h3 data-pt="Stack Técnico e Conhecimentos" data-en="Technical Stack &amp; Knowledge">Stack Técnico e Conhecimentos</h3>
+                    <div class="cv-skills">
+                        <span>C / C++</span>
+                        <span>Assembly (x86 / MIPS)</span>
+                        <span>Python</span>
+                        <span>SQL</span>
+                        <span>Java</span>
+                        <span data-pt="Engenharia Reversa" data-en="Reverse Engineering">Engenharia Reversa</span>
+                        <span data-pt="Vulnerabilidades" data-en="Vulnerabilities">Vulnerabilidades</span>
+                        <span data-pt="Gerenciamento de Memória" data-en="Memory Management">Gerenciamento de Memória</span>
+                        <span>Git / GitHub</span>
+                        <span data-pt="Sistemas Operacionais" data-en="Operating Systems">Sistemas Operacionais</span>
+                    </div>
+                </div>
+
+                <!-- CONHECIMENTOS INDUSTRIAIS -->
+                <div class="cv-section">
+                    <h3 data-pt="Conhecimentos Industriais e Segurança"
+                        data-en="Industrial &amp; Safety Knowledge">
+                        Conhecimentos Industriais e Segurança
+                    </h3>
+                    <div class="cv-item">
+                        <ul class="lang-pt">
+                            <li><strong>Operação e Logística:</strong> Operação de Empilhadeira (NR 11) e gestão de fluxo de produção.</li>
+                            <li><strong>Segurança em Ambientes Críticos:</strong> Certificações em Trabalho em Altura (NR 35) e Espaço Confinado (NR 33).</li>
+                            <li><strong>Qualidade e Processos:</strong> Boas Práticas de Fabricação (BPF) aplicadas a maquinários de grande porte (Bühler Sortex).</li>
+                        </ul>
+                        <ul class="lang-en" style="display:none">
+                            <li><strong>Operation &amp; Logistics:</strong> Forklift Operation (NR 11 standard) and production flow management.</li>
+                            <li><strong>Safety in Critical Environments:</strong> Certifications in Working at Heights (NR 35) and Confined Spaces (NR 33).</li>
+                            <li><strong>Quality &amp; Processes:</strong> Good Manufacturing Practices (GMP) applied to large-scale industrial machinery (Bühler Sortex).</li>
+                        </ul>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>&copy; 2026 Robert Souza Lages.</p>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>

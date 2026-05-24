@@ -1,3 +1,12 @@
 [
-
+    {
+        "id": "nativastub-gen-zero-dependency",
+        "title": "Bypassing the C Runtime: Zero Imports & Direct Syscalls",
+        "category": "low-level",
+        "tag": "LOW-LEVEL",
+        "date": "2026-05-24",
+        "description": "Como construí o NativaStub Gen para extrair SSNs da ntdll.dll e migrei de MASM/C++ para NASM/C puro — resultando em um executável com zero importações e zero dependências de DLL.",
+        "description_en": "How I built NativaStub Gen to extract SSNs from ntdll.dll and migrated from MASM/C++ to pure NASM/C — resulting in an executable with zero imports and zero DLL dependencies.",
+        "url": "posts/nativastub.html"
+    }
 ]

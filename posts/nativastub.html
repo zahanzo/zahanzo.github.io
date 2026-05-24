@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NativaStub Gen — Direct Syscalls without ntdll | Robert Souza Lages</title>
+    <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+    <link rel="stylesheet" href="style.css">
+    <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
+</head>
+<body>
+
+<nav class="navbar">
+    <div class="logo"><span>0x</span>Robert<span>_</span></div>
+    <ul class="nav-links">
+        <li><a href="../index.html"    data-pt="Sobre"    data-en="About">Sobre</a></li>
+        <li><a href="../resume.html"   data-pt="Currículo" data-en="Resume">Currículo</a></li>
+        <li><a href="../projects.html" data-pt="Projetos"  data-en="Projects">Projetos</a></li>
+        <li><a href="../posts.html" class="active">Posts</a></li>
+    </ul>
+    <div class="navbar-right">
+        <div class="lang-toggle">
+            <button class="lang-btn active" id="btn-pt">PT</button>
+            <button class="lang-btn"        id="btn-en">EN</button>
+        </div>
+        <div class="hamburger"><i class='bx bx-menu'></i></div>
+    </div>
+</nav>
+
+<main>
+<article class="post-wrapper">
+
+    <header class="post-header">
+        <div class="post-breadcrumb">
+            <a href="../posts.html">posts</a><span>/</span><span>nativastub-gen</span>
+        </div>
+        <div class="post-meta">
+            <span class="post-tag">LOW-LEVEL</span>
+            <span class="post-tag">WINDOWS INTERNALS</span>
+            <time class="post-date" datetime="2026-05-24">2026-05-24</time>
+        </div>
+        <h1 class="post-title">
+            Bypassing the C Runtime:<br>
+            <span data-pt="Zero Imports & Direct Syscalls" data-en="Zero Imports & Direct Syscalls">Zero Imports & Direct Syscalls</span>
+        </h1>
+        <p class="post-summary lang-pt">
+            Como construí o NativaStub Gen para extrair SSNs dinamicamente da <code>ntdll.dll</code>
+            e como migrei a arquitetura de MASM/C++ com <code>&lt;windows.h&gt;</code> para NASM/C puro —
+            resultando em um executável com zero importações e zero dependências de DLL.
+        </p>
+        <p class="post-summary lang-en" style="display:none">
+            How I built NativaStub Gen to dynamically extract SSNs from <code>ntdll.dll</code>
+            and how I migrated the architecture from MASM/C++ with <code>&lt;windows.h&gt;</code>
+            to pure NASM/C — resulting in an executable with zero imports and zero DLL dependencies.
+        </p>
+
+        <div class="toc lang-pt">
+            <div class="toc-title">// ÍNDICE</div>
+            <ol>
+                <li><a href="#contexto">O problema: por que não confiar na ntdll.dll?</a></li>
+                <li><a href="#projeto">O NativaStub Gen</a></li>
+                <li><a href="#migracao">A migração: MASM + C++ → NASM + C puro</a></li>
+                <li><a href="#output">O código gerado</a></li>
+                <li><a href="#poc">Prova de conceito: zero importações</a></li>
+                <li><a href="#detalhes">Detalhes técnicos</a></li>
+            </ol>
+        </div>
+        <div class="toc lang-en" style="display:none">
+            <div class="toc-title">// TABLE OF CONTENTS</div>
+            <ol>
+                <li><a href="#contexto">The problem: why not trust ntdll.dll?</a></li>
+                <li><a href="#projeto">NativaStub Gen</a></li>
+                <li><a href="#migracao">The migration: MASM + C++ → pure NASM + C</a></li>
+                <li><a href="#output">Generated code</a></li>
+                <li><a href="#poc">Proof of concept: zero imports</a></li>
+                <li><a href="#detalhes">Technical details</a></li>
+            </ol>
+        </div>
+    </header>
+
+    <section class="post-section" id="contexto">
+        <div class="section-label">01</div>
+        <h2 data-pt="O problema: por que não confiar na ntdll.dll?" data-en="The problem: why not trust ntdll.dll?">
+            O problema: por que não confiar na <code>ntdll.dll</code>?
+        </h2>
+
+        <p class="lang-pt">
+            Todo programa Windows que faz algo útil — abrir arquivo, alocar memória, criar processo — eventualmente
+            passa pela <code>ntdll.dll</code>. Ela é a única DLL carregada diretamente pelo kernel e funciona como
+            a ponte entre o espaço do usuário e o NT Kernel. Ferramentas de segurança como EDRs sabem exatamente disso,
+            e é exatamente ali que elas instalam seus hooks.
+        </p>
+        <p class="lang-en" style="display:none">
+            Every Windows program that does anything useful — open a file, allocate memory, create a process —
+            eventually goes through <code>ntdll.dll</code>. It is the only DLL loaded directly by the kernel,
+            acting as the bridge between user space and the NT Kernel. Security tools like EDRs know this,
+            and that is exactly where they install their hooks.
+        </p>
+
+        <div class="flow-compare">
+            <div class="flow-col">
+                <div class="flow-col-title old">// <span data-pt="FLUXO NORMAL" data-en="NORMAL FLOW">FLUXO NORMAL</span></div>
+                <div class="flow-step dim"><div class="dot"></div>programa.exe</div>
+                <div class="flow-step dim"><div class="dot"></div>kernel32 / ucrtbase</div>
+                <div class="flow-step bad"><div class="dot"></div>ntdll.dll ← <span data-pt="hook do EDR" data-en="EDR hook">hook do EDR</span></div>
+                <div class="flow-step dim"><div class="dot"></div><span data-pt="instrução" data-en="instruction">instrução</span> syscall</div>
+                <div class="flow-step dim"><div class="dot"></div>NT Kernel</div>
+            </div>
+            <div class="flow-col">
+                <div class="flow-col-title new">// DIRECT SYSCALLS</div>
+                <div class="flow-step ok"><div class="dot"></div>programa.exe</div>
+                <div class="flow-step ok"><div class="dot"></div>stub .asm (<span data-pt="nosso código" data-en="our code">nosso código</span>)</div>
+                <div class="flow-step ok"><div class="dot"></div><span data-pt="instrução" data-en="instruction">instrução</span> syscall</div>
+                <div class="flow-step ok"><div class="dot"></div>NT Kernel</div>
+            </div>
+        </div>
+
+        <p class="lang-pt">
+            A técnica de <strong style="color:#fff">Direct Syscalls</strong> elimina a <code>ntdll.dll</code> do
+            caminho chamando a instrução <code>syscall</code> diretamente com o número correto da função no kernel
+            (o SSN — Syscall Service Number). Nenhum hook instalado na <code>ntdll.dll</code> é alcançado.
+        </p>
+        <p class="lang-en" style="display:none">
+            <strong style="color:#fff">Direct Syscalls</strong> eliminates <code>ntdll.dll</code> from the call
+            path by invoking the <code>syscall</code> instruction directly with the kernel's function number
+            (the SSN — Syscall Service Number). No hook installed in <code>ntdll.dll</code> is ever reached.
+        </p>
+    </section>
+
+    <section class="post-section" id="projeto">
+        <div class="section-label">02</div>
+        <h2 data-pt="O NativaStub Gen" data-en="NativaStub Gen">O NativaStub Gen</h2>
+
+        <p class="lang-pt">
+            O <strong style="color:#fff">NativaStub Gen</strong> é um gerador de código escrito em C++.
+            Ele recebe a <code>ntdll.dll</code> como entrada, faz análise estática das exportações,
+            extrai o SSN de cada função <code>Nt*</code>, e gera Assembly + header C prontos para compilar.
+        </p>
+        <p class="lang-en" style="display:none">
+            <strong style="color:#fff">NativaStub Gen</strong> is a code generator written in C++.
+            It takes <code>ntdll.dll</code> as input, statically analyzes its exports,
+            extracts the SSN from each <code>Nt*</code> function, and outputs ready-to-compile Assembly + C header code.
+        </p>
+
+        <h3>// <span data-pt="Como o SSN é extraído" data-en="How the SSN is extracted">Como o SSN é extraído</span></h3>
+
+        <p class="lang-pt">
+            Dentro de cada função <code>Nt*</code> exportada pela <code>ntdll.dll</code>, a Microsoft segue sempre
+            o mesmo padrão de stub. O gerador varre cada exportação, localiza a instrução <code>mov eax, N</code>
+            na sequência de bytes esperada e extrai o valor <code>N</code> — que é o índice da syscall
+            na SSDT (System Service Descriptor Table) do kernel.
+        </p>
+        <p class="lang-en" style="display:none">
+            Inside each <code>Nt*</code> function exported by <code>ntdll.dll</code>, Microsoft always follows
+            the same stub pattern. The generator scans each export, locates the <code>mov eax, N</code>
+            instruction in the expected byte sequence, and extracts the value <code>N</code> —
+            which is the syscall's index in the kernel's SSDT (System Service Descriptor Table).
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">ntdll.dll — NtCreateFile (<span data-pt="desmontado" data-en="disassembled">desmontado</span>)</span>
+                <span class="code-lang">asm</span>
+            </div>
+<pre><span class="fn">NtCreateFile</span>:
+    <span class="kw">mov</span>    <span class="reg">r10</span>, <span class="reg">rcx</span>
+    <span class="kw">mov</span>    <span class="reg">eax</span>, <span class="num">0x55</span>           <span class="cm">; &lt;-- SSN extracted by NativaStub Gen</span>
+    <span class="kw">test</span>   <span class="kw">byte ptr</span> [<span class="num">0x7FFE0308</span>], <span class="num">1</span>
+    <span class="kw">jne</span>    <span class="fn">+0xF</span>
+    <span class="kw">syscall</span>
+    <span class="kw">ret</span></pre>
+        </div>
+    </section>
+
+    <section class="post-section" id="migracao">
+        <div class="section-label">03</div>
+        <h2 data-pt="A migração: MASM + C++ → NASM + C puro" data-en="The migration: MASM + C++ → pure NASM + C">
+            <span data-pt="A migração:" data-en="The migration:">A migração:</span>
+            MASM + C++ → NASM + C
+        </h2>
+
+        <p class="lang-pt">
+            A versão original do NativaStub Gen foi desenvolvida no Visual Studio, usando MASM para o Assembly
+            e gerando um <code>.hpp</code> que incluía <code>&lt;windows.h&gt;</code>. Isso funcionava, mas criava
+            uma dependência implícita: qualquer projeto que usasse o header gerado precisaria do ambiente Win32 completo.
+        </p>
+        <p class="lang-en" style="display:none">
+            The original version of NativaStub Gen was developed in Visual Studio, using MASM for Assembly and
+            generating a <code>.hpp</code> that included <code>&lt;windows.h&gt;</code>. This worked, but created
+            an implicit dependency: any project using the generated header would require the full Win32 environment.
+        </p>
+        <p class="lang-pt">
+            Para o proof-of-concept que queria construir — um executável nativo sem <em>nenhuma</em> importação —
+            isso era um problema. A solução foi modificar as duas funções de geração do projeto.
+        </p>
+        <p class="lang-en" style="display:none">
+            For the proof-of-concept I wanted to build — a native executable with <em>zero</em> imports —
+            this was a blocker. The solution was to modify the two generation functions of the project.
+        </p>
+
+        <h3>// GenerateAsm() — <span data-pt="de MASM para NASM" data-en="from MASM to NASM">de MASM para NASM</span></h3>
+
+        <div class="diff-grid">
+            <div class="diff-col">
+                <div class="diff-header old">— <span data-pt="ANTES (MASM)" data-en="BEFORE (MASM)">ANTES (MASM)</span></div>
+<pre><span class="cm">// MASM section directive</span>
+asmFile &lt;&lt; <span class="str">".code\n\n"</span>;
+
+<span class="kw">for</span> (<span class="tp">size_t</span> i = <span class="num">0</span>; ...) {
+    <span class="cm">// proc/endp: MASM-only syntax</span>
+    asmFile &lt;&lt; syscalls[i].name
+            &lt;&lt; <span class="str">" proc\n"</span>;
+    asmFile &lt;&lt; <span class="str">"    mov r10, rcx\n"</span>;
+    asmFile &lt;&lt; <span class="str">"    mov eax, "</span> &lt;&lt; i ...;
+    asmFile &lt;&lt; <span class="str">"    syscall\n"</span>;
+    asmFile &lt;&lt; <span class="str">"    ret\n"</span>;
+    asmFile &lt;&lt; syscalls[i].name
+            &lt;&lt; <span class="str">" endp\n\n"</span>;
+}
+<span class="cm">// required MASM terminator</span>
+asmFile &lt;&lt; <span class="str">"end\n"</span>;</pre>
+            </div>
+            <div class="diff-col">
+                <div class="diff-header new">+ <span data-pt="DEPOIS (NASM)" data-en="AFTER (NASM)">DEPOIS (NASM)</span></div>
+<pre><span class="cm">// NASM standard section</span>
+asmFile &lt;&lt; <span class="str">"section .text\n\n"</span>;
+
+<span class="kw">for</span> (<span class="tp">size_t</span> i = <span class="num">0</span>; ...) {
+    <span class="cm">// exposes symbol to the linker</span>
+    asmFile &lt;&lt; <span class="str">"global "</span>
+            &lt;&lt; syscalls[i].name &lt;&lt; <span class="str">"\n"</span>;
+    <span class="cm">// NASM label ends with ":"</span>
+    asmFile &lt;&lt; syscalls[i].name
+            &lt;&lt; <span class="str">":\n"</span>;
+    asmFile &lt;&lt; <span class="str">"    mov r10, rcx\n"</span>;
+    asmFile &lt;&lt; <span class="str">"    mov eax, "</span> &lt;&lt; i ...;
+    asmFile &lt;&lt; <span class="str">"    syscall\n"</span>;
+    asmFile &lt;&lt; <span class="str">"    ret\n\n"</span>;
+}
+<span class="cm">// no "end" needed in NASM</span></pre>
+            </div>
+        </div>
+
+        <div class="callout">
+            <p><strong data-pt="Por que essa diferença importa?" data-en="Why does this difference matter?">Por que essa diferença importa?</strong></p>
+            <p class="lang-pt">No MASM, <code>proc</code>/<code>endp</code> são diretivas do assembler que definem um procedimento e automaticamente o exportam para o linker. No NASM, o mecanismo é explícito: <code>global NomeDaFunção</code> declara o símbolo como público, e o label <code>NomeDaFunção:</code> marca onde o código começa. Mais verboso, porém totalmente portátil — funciona com MinGW, Clang e qualquer toolchain que aceite NASM.</p>
+            <p class="lang-en" style="display:none">In MASM, <code>proc</code>/<code>endp</code> are assembler directives that define a procedure and automatically export it to the linker. In NASM, the mechanism is explicit: <code>global FunctionName</code> declares the symbol as public, and the label <code>FunctionName:</code> marks where the code starts. More verbose, but fully portable — works with MinGW, Clang, and any toolchain that accepts NASM.</p>
+        </div>
+
+        <h3>// GenerateHpp() → GenerateHeader() — <span data-pt="removendo &lt;windows.h&gt;" data-en="removing &lt;windows.h&gt;">removendo <code>&lt;windows.h&gt;</code></span></h3>
+
+        <div class="diff-grid">
+            <div class="diff-col">
+                <div class="diff-header old">— <span data-pt="ANTES (.hpp + windows.h)" data-en="BEFORE (.hpp + windows.h)">ANTES (.hpp + windows.h)</span></div>
+<pre>hppFile &lt;&lt; <span class="str">"#pragma once\n"</span>;
+<span class="cm">// pulls the entire Win32 API</span>
+hppFile &lt;&lt; <span class="str">"#include &lt;windows.h&gt;\n\n"</span>;
+
+<span class="cm">// extern "C": disables C++ name mangling</span>
+<span class="cm">// without it the linker looks for</span>
+<span class="cm">// "?NtCreateFile@@YAJXZ" and fails</span>
+hppFile &lt;&lt; <span class="str">"extern \"C\" {\n"</span>;
+
+<span class="kw">for</span> (<span class="kw">const auto</span>&amp; sc : syscalls) {
+    hppFile &lt;&lt; <span class="str">"    NTSTATUS "</span>
+            &lt;&lt; sc.name
+            &lt;&lt; <span class="str">"(...);\n"</span>;
+}
+hppFile &lt;&lt; <span class="str">"}\n"</span>;</pre>
+            </div>
+            <div class="diff-col">
+                <div class="diff-header new">+ <span data-pt="DEPOIS (.h sem dependências)" data-en="AFTER (.h, no dependencies)">DEPOIS (.h sem dependências)</span></div>
+<pre>hFile &lt;&lt; <span class="str">"#pragma once\n\n"</span>;
+
+<span class="cm">// minimal typedefs — no windows.h</span>
+hFile &lt;&lt; <span class="str">"typedef void* HANDLE;\n"</span>;
+hFile &lt;&lt; <span class="str">"typedef long NTSTATUS;\n"</span>;
+hFile &lt;&lt; <span class="str">"typedef void* PVOID;\n\n"</span>;
+
+<span class="cm">// pure C: no extern "C" needed,</span>
+<span class="cm">// C never applies name mangling</span>
+<span class="kw">for</span> (<span class="kw">const auto</span>&amp; sc : syscalls) {
+    hFile &lt;&lt; <span class="str">"NTSTATUS "</span>
+          &lt;&lt; sc.name
+          &lt;&lt; <span class="str">"(...);\n"</span>;
+}</pre>
+            </div>
+        </div>
+
+        <div class="callout warn">
+            <p><strong data-pt="O problema do extern &quot;C&quot;" data-en="The extern &quot;C&quot; problem">O problema do <code>extern "C"</code></strong></p>
+            <p class="lang-pt">O C++ aplica <em>name mangling</em> em todas as funções — um mecanismo que codifica os tipos dos parâmetros no nome do símbolo para suportar sobrecarga. Sem <code>extern "C"</code>, o linker procuraria algo como <code>?NtCreateFile@@YAJXZ</code> em vez de <code>NtCreateFile</code>, e a linkagem falharia silenciosamente. Ao migrar para C puro, o problema desaparece: C não tem name mangling.</p>
+            <p class="lang-en" style="display:none">C++ applies <em>name mangling</em> to all functions — a mechanism that encodes parameter types into the symbol name to support overloading. Without <code>extern "C"</code>, the linker would look for something like <code>?NtCreateFile@@YAJXZ</code> instead of <code>NtCreateFile</code>, and linking would silently fail. By migrating to pure C, the problem disappears: C has no name mangling.</p>
+        </div>
+
+        <h3>// <span data-pt="Resumo das mudanças" data-en="Summary of changes">Resumo das mudanças</span></h3>
+        <table class="post-table">
+            <thead>
+                <tr>
+                    <th data-pt="Aspecto" data-en="Aspect">Aspecto</th>
+                    <th data-pt="Versão Original" data-en="Original">Versão Original</th>
+                    <th data-pt="Versão Migrada" data-en="Migrated">Versão Migrada</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Assembler</td>
+                    <td class="no">MASM (Visual Studio)</td>
+                    <td class="yes">NASM (open)</td>
+                </tr>
+                <tr>
+                    <td data-pt="Sintaxe de seção" data-en="Section syntax">Sintaxe de seção</td>
+                    <td class="no"><code>.code</code> + <code>proc/endp</code></td>
+                    <td class="yes"><code>section .text</code> + <code>global</code></td>
+                </tr>
+                <tr>
+                    <td data-pt="Header gerado" data-en="Generated header">Header gerado</td>
+                    <td class="no"><code>syscalls.hpp</code></td>
+                    <td class="yes"><code>syscalls.h</code></td>
+                </tr>
+                <tr>
+                    <td data-pt="Dependência" data-en="Dependency">Dependência</td>
+                    <td class="no"><code>&lt;windows.h&gt;</code></td>
+                    <td class="yes" data-pt="Nenhuma" data-en="None">Nenhuma</td>
+                </tr>
+                <tr>
+                    <td>Name mangling</td>
+                    <td class="no"><code>extern "C"</code> <span data-pt="necessário" data-en="required">necessário</span></td>
+                    <td class="yes" data-pt="não existe em C" data-en="C doesn't have it">não existe em C</td>
+                </tr>
+                <tr>
+                    <td data-pt="Compatibilidade" data-en="Compatibility">Compatibilidade</td>
+                    <td class="no">C++ <span data-pt="somente" data-en="only">somente</span></td>
+                    <td class="yes">C / C++</td>
+                </tr>
+                <tr>
+                    <td>Toolchain</td>
+                    <td class="no">MSVC</td>
+                    <td class="yes">MinGW / Clang / MSVC</td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section class="post-section" id="output">
+        <div class="section-label">04</div>
+        <h2 data-pt="O código gerado" data-en="Generated code">O código gerado</h2>
+
+        <p class="lang-pt">
+            Para cada função <code>Nt*</code> encontrada na <code>ntdll.dll</code>, o gerador produz um stub
+            idêntico ao da DLL original — mas agora o código é seu, compilado e linkado junto com a sua aplicação.
+        </p>
+        <p class="lang-en" style="display:none">
+            For each <code>Nt*</code> function found in <code>ntdll.dll</code>, the generator produces a stub
+            identical to the original DLL — but now the code is yours, compiled and linked alongside your application.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">syscalls.asm — <span data-pt="gerado automaticamente" data-en="auto-generated">gerado automaticamente</span></span>
+                <span class="code-lang">nasm</span>
+            </div>
+<pre><span class="cm">; Auto-generated by NativaStub Gen</span>
+<span class="cm">; Target: ntdll.dll 10.0.26100 (Windows 11 24H2)</span>
+
+section .text
+
+<span class="op">global</span> <span class="fn">NtCreateFile</span>
+<span class="fn">NtCreateFile</span>:
+    <span class="kw">mov</span>  <span class="reg">r10</span>, <span class="reg">rcx</span>
+    <span class="kw">mov</span>  <span class="reg">eax</span>, <span class="num">85</span>       <span class="cm">; SSN: 0x55</span>
+    <span class="kw">syscall</span>
+    <span class="kw">ret</span>
+
+<span class="op">global</span> <span class="fn">NtWriteFile</span>
+<span class="fn">NtWriteFile</span>:
+    <span class="kw">mov</span>  <span class="reg">r10</span>, <span class="reg">rcx</span>
+    <span class="kw">mov</span>  <span class="reg">eax</span>, <span class="num">8</span>        <span class="cm">; SSN: 0x8</span>
+    <span class="kw">syscall</span>
+    <span class="kw">ret</span>
+
+<span class="op">global</span> <span class="fn">NtTerminateProcess</span>
+<span class="fn">NtTerminateProcess</span>:
+    <span class="kw">mov</span>  <span class="reg">r10</span>, <span class="reg">rcx</span>
+    <span class="kw">mov</span>  <span class="reg">eax</span>, <span class="num">44</span>       <span class="cm">; SSN: 0x2c</span>
+    <span class="kw">syscall</span>
+    <span class="kw">ret</span>
+
+<span class="cm">; ... 470+ Nt* functions generated</span></pre>
+        </div>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">syscalls.h — <span data-pt="gerado automaticamente" data-en="auto-generated">gerado automaticamente</span></span>
+                <span class="code-lang">c</span>
+            </div>
+<pre><span class="pp">#pragma once</span>
+
+<span class="cm">/* minimal typedefs — no windows.h dependency */</span>
+<span class="kw">typedef</span> <span class="tp">void</span>* <span class="tp">HANDLE</span>;
+<span class="kw">typedef</span> <span class="tp">long</span>  <span class="tp">NTSTATUS</span>;
+<span class="kw">typedef</span> <span class="tp">void</span>* <span class="tp">PVOID</span>;
+
+<span class="tp">NTSTATUS</span> <span class="fn">NtCreateFile</span>(...);
+<span class="tp">NTSTATUS</span> <span class="fn">NtWriteFile</span>(...);
+<span class="tp">NTSTATUS</span> <span class="fn">NtClose</span>(...);
+<span class="tp">NTSTATUS</span> <span class="fn">NtTerminateProcess</span>(...);
+<span class="cm">/* ... */</span></pre>
+        </div>
+    </section>
+
+    <section class="post-section" id="poc">
+        <div class="section-label">05</div>
+        <h2 data-pt="Prova de conceito: zero importações" data-en="Proof of concept: zero imports">
+            <span data-pt="Prova de conceito: zero importações" data-en="Proof of concept: zero imports">Prova de conceito: zero importações</span>
+        </h2>
+
+        <p class="lang-pt">
+            Com o <code>syscalls.h</code> e o <code>syscalls.asm</code> gerados, construí uma aplicação que roda
+            no <strong style="color:#fff">Subsistema Nativo do Windows</strong> — sem Win32, sem CRT,
+            sem nenhum <code>#include</code> além do header gerado. O programa cria um arquivo em <code>C:\</code>
+            e escreve uma string nele usando apenas Direct Syscalls.
+        </p>
+        <p class="lang-en" style="display:none">
+            With the generated <code>syscalls.h</code> and <code>syscalls.asm</code>, I built an application that
+            runs on the <strong style="color:#fff">Windows Native Subsystem</strong> — no Win32, no CRT,
+            no <code>#include</code> beyond the generated header. The program creates a file in <code>C:\</code>
+            and writes a string to it using only Direct Syscalls.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">main.c</span>
+                <span class="code-lang">c</span>
+            </div>
+<pre><span class="pp">#include</span> <span class="str">"syscalls.h"</span>   <span class="cm">/* only include — auto-generated by NativaStub Gen */</span>
+
+<span class="kw">typedef</span> <span class="tp">unsigned short</span>     <span class="tp">USHORT</span>;
+<span class="kw">typedef</span> <span class="tp">unsigned long</span>      <span class="tp">ULONG</span>;
+<span class="kw">typedef</span> <span class="tp">unsigned long long</span> <span class="tp">ULONG_PTR</span>;
+
+<span class="kw">typedef struct</span> {
+    <span class="tp">USHORT</span> Length, MaximumLength; <span class="tp">USHORT</span>* Buffer;
+} <span class="tp">UNICODE_STRING</span>;
+
+<span class="kw">typedef struct</span> {
+    <span class="tp">ULONG</span>  Length;  <span class="tp">HANDLE</span> RootDirectory;
+    <span class="tp">UNICODE_STRING</span>* ObjectName;  <span class="tp">ULONG</span> Attributes;
+    <span class="tp">PVOID</span>  SecurityDescriptor, SecurityQualityOfService;
+} <span class="tp">OBJECT_ATTRIBUTES</span>;
+
+<span class="kw">typedef struct</span> {
+    <span class="kw">union</span> { <span class="tp">long</span> Status; <span class="tp">void</span>* Pointer; };
+    <span class="tp">ULONG_PTR</span> Information;
+} <span class="tp">IO_STATUS_BLOCK</span>;
+
+<span class="cm">/* native subsystem entry point — not main() */</span>
+<span class="tp">void</span> <span class="fn">EntryPoint</span>() {
+    <span class="tp">HANDLE</span> hFile;  <span class="tp">IO_STATUS_BLOCK</span> iosb;
+    <span class="tp">OBJECT_ATTRIBUTES</span> oa;  <span class="tp">UNICODE_STRING</span> fileName;
+
+    <span class="cm">/* path in NT Object Manager format — \??\ maps to the device namespace */</span>
+    <span class="tp">unsigned short</span> path[] = {
+        <span class="str">'\\'</span>,<span class="str">'?'</span>,<span class="str">'?'</span>,<span class="str">'\\'</span>,<span class="str">'C'</span>,<span class="str">':'</span>,<span class="str">'\\'</span>,
+        <span class="str">'N'</span>,<span class="str">'o'</span>,<span class="str">'S'</span>,<span class="str">'T'</span>,<span class="str">'D'</span>,<span class="str">'_'</span>,
+        <span class="str">'N'</span>,<span class="str">'a'</span>,<span class="str">'t'</span>,<span class="str">'i'</span>,<span class="str">'v'</span>,<span class="str">'e'</span>,<span class="str">'.'</span>,<span class="str">'t'</span>,<span class="str">'x'</span>,<span class="str">'t'</span>, <span class="num">0</span>
+    };
+
+    fileName.Buffer = path;
+    fileName.Length = <span class="num">23</span> * <span class="num">2</span>;
+    fileName.MaximumLength = <span class="num">24</span> * <span class="num">2</span>;
+
+    oa.Length = <span class="kw">sizeof</span>(<span class="tp">OBJECT_ATTRIBUTES</span>);
+    oa.RootDirectory = <span class="num">0</span>;
+    oa.ObjectName = &fileName;
+    oa.Attributes = <span class="num">0x40</span>;             <span class="cm">/* OBJ_CASE_INSENSITIVE */</span>
+    oa.SecurityDescriptor = oa.SecurityQualityOfService = <span class="num">0</span>;
+
+    <span class="tp">NTSTATUS</span> st = <span class="fn">NtCreateFile</span>(
+        &hFile,
+        <span class="num">0x40000000</span> | <span class="num">0x00100000</span>,        <span class="cm">/* GENERIC_WRITE | SYNCHRONIZE */</span>
+        &oa, &iosb,
+        <span class="num">0</span>, <span class="num">0x80</span>,                         <span class="cm">/* no alloc size, FILE_ATTRIBUTE_NORMAL */</span>
+        <span class="num">0x01</span>,                            <span class="cm">/* FILE_SHARE_READ */</span>
+        <span class="num">5</span>,                               <span class="cm">/* FILE_OVERWRITE_IF */</span>
+        <span class="num">0x20</span> | <span class="num">0x40</span>,                     <span class="cm">/* SYNC_IO_NONALERT | NON_DIRECTORY_FILE */</span>
+        <span class="num">0</span>, <span class="num">0</span>
+    );
+
+    <span class="kw">if</span> (st == <span class="num">0</span>) {
+        <span class="tp">char</span> msg[] = <span class="str">"Success via Direct Syscalls — no ntdll, no imports.\n"</span>;
+        <span class="fn">NtWriteFile</span>(hFile, <span class="num">0</span>, <span class="num">0</span>, <span class="num">0</span>, &iosb, msg, <span class="kw">sizeof</span>(msg) - <span class="num">1</span>, <span class="num">0</span>, <span class="num">0</span>);
+        <span class="fn">NtClose</span>(hFile);
+    }
+
+    <span class="cm">/* terminate passing the NT status as exit code */</span>
+    <span class="fn">NtTerminateProcess</span>((<span class="tp">HANDLE</span>)-<span class="num">1</span>, st);
+}
+</pre>
+        </div>
+
+        <p class="lang-pt">
+            Resultado: a Import Address Table do binário final está completamente vazia. Nenhuma DLL é referenciada.
+        </p>
+        <p class="lang-en" style="display:none">
+            Result: the final binary's Import Address Table is completely empty. No DLL is referenced.
+        </p>
+
+        <table class="post-table">
+            <thead>
+                <tr>
+                    <th>DLL</th>
+                    <th data-pt="Funções importadas" data-en="Imported functions">Funções importadas</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>ntdll.dll</td>   <td class="no" data-pt="nenhuma" data-en="none">nenhuma</td></tr>
+                <tr><td>kernel32.dll</td><td class="no" data-pt="nenhuma" data-en="none">nenhuma</td></tr>
+                <tr><td>ucrtbase.dll</td><td class="no" data-pt="nenhuma" data-en="none">nenhuma</td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section class="post-section" id="detalhes">
+        <div class="section-label">06</div>
+        <h2 data-pt="Detalhes técnicos" data-en="Technical details">Detalhes técnicos</h2>
+
+        <h3>// <span data-pt="Por que" data-en="Why">Por que</span> <code>mov r10, rcx</code>?</h3>
+        <p class="lang-pt">
+            Na ABI x64 do Windows, o primeiro argumento é passado em <code>RCX</code>. Mas a instrução
+            <code>syscall</code> usa <code>RCX</code> para salvar o endereço de retorno (RIP) antes de entrar no kernel.
+            O kernel então espera o primeiro argumento em <code>R10</code> — daí o <code>mov r10, rcx</code>
+            que abre cada stub.
+        </p>
+        <p class="lang-en" style="display:none">
+            In the Windows x64 ABI, the first argument is passed in <code>RCX</code>. But the <code>syscall</code>
+            instruction uses <code>RCX</code> to save the return address (RIP) before entering the kernel.
+            The kernel then expects the first argument in <code>R10</code> — hence the <code>mov r10, rcx</code>
+            that opens each stub.
+        </p>
+
+        <h3 id="resolucao">// <span data-pt="SSNs mudam entre versões do Windows" data-en="SSNs change across Windows versions">SSNs mudam entre versões do Windows</span></h3>
+        
+        <p class="lang-pt">
+            Os números de syscall não são estáveis — a Microsoft reordena a SSDT (System Service Descriptor Table) a cada grande atualização ou build do Windows. Em vez de adotar uma abordagem estática ou engessada com números hardcoded (como assumir que <code>NtCreateFile</code> é sempre <code>0x55</code>), o <strong>NativaStub Gen resolve esse problema mapeando a arquitetura em disco</strong>.
+        </p>
+        <p class="lang-pt">
+            A lógica explora uma característica do compilador da Microsoft: as funções <code>Nt*</code>/<code>Zw*</code> são dispostas na seção <code>.text</code> da <code>ntdll.dll</code> sequencialmente de acordo com o seu endereço de memória. A função com o menor RVA (Relative Virtual Address) corresponde ao SSN <code>0x00</code>, a segunda ao <code>0x01</code>, e assim por diante.
+        </p>
+        <p class="lang-pt">
+            O parser em C++ (<code>PEParser.cpp</code>) lê a <em>Export Directory</em>, filtra os símbolos, e aplica um <code>std::sort</code> baseado nos RVAs. Com isso, os stubs em Assembly são gerados dinamicamente com os índices perfeitamente sincronizados para a versão exata do sistema operacional onde a ferramenta foi executada.
+        </p>
+
+        <p class="lang-en" style="display:none">
+            Syscall service numbers are inherently unstable — Microsoft reshuffles the SSDT (System Service Descriptor Table) with every major Windows build or update. Instead of relying on a fragile static approach with hardcoded values (such as assuming <code>NtCreateFile</code> is always <code>0x55</code>), <strong>NativaStub Gen solves this problem by mapping the disk architecture</strong>.
+        </p>
+        <p class="lang-en" style="display:none">
+            The logic exploits a behavior of Microsoft's compiler: <code>Nt*</code>/<code>Zw*</code> functions are laid out within the <code>.text</code> section of <code>ntdll.dll</code> sequentially based on their memory addresses. The function with the lowest RVA (Relative Virtual Address) maps to SSN <code>0x00</code>, the next to <code>0x01</code>, and so on.
+        </p>
+        <p class="lang-en" style="display:none">
+            The C++ parser (<code>PEParser.cpp</code>) reads the <em>Export Directory</em>, filters the symbols, and applies a <code>std::sort</code> based on their RVAs. Consequently, the Assembly stubs are generated dynamically with indexes perfectly synchronized for the exact OS build where the tool ran.
+        </p>
+
+        <h3>// <span data-pt="O path" data-en="The path">O path</span> <code>\??\C:\</code></h3>
+        <p class="lang-pt">
+            O NT Object Manager não entende caminhos Win32 como <code>C:\arquivo.txt</code>. O prefixo
+            <code>\??\</code> é um link simbólico dentro do namespace do Object Manager que aponta para o namespace
+            de dispositivos da sessão atual — equivalente ao <code>\\.\</code> do Win32, mas acessível
+            apenas via API nativa.
+        </p>
+        <p class="lang-en" style="display:none">
+            The NT Object Manager does not understand Win32 paths like <code>C:\file.txt</code>. The
+            <code>\??\</code> prefix is a symbolic link inside the Object Manager namespace pointing to the current
+            session's device namespace — equivalent to Win32's <code>\\.\</code>, but accessible only
+            through the native API.
+        </p>
+    </section>
+
+    <div class="post-nav">
+        <a href="../posts.html">
+            <i class='bx bx-arrow-back'></i>
+            <span data-pt="Voltar aos posts" data-en="Back to posts">Voltar aos posts</span>
+        </a>
+        <a href="https://github.com/zahanzo" target="_blank">
+            <span data-pt="Ver no GitHub" data-en="View on GitHub">Ver no GitHub</span>
+            <i class='bx bx-link-external'></i>
+        </a>
+    </div>
+
+</article>
+</main>
+
+<footer>
+    <p>&copy; 2026 Robert Souza Lages.</p>
+</footer>
+
+<script>
+    let currentLang = localStorage.getItem('lang') || 'pt';
+
+    function setLang(lang) {
+        currentLang = lang;
+        localStorage.setItem('lang', lang);
+
+        document.querySelectorAll('[data-pt], [data-en]').forEach(el => {
+            const val = el.getAttribute('data-' + lang);
+            if (val !== null) el.textContent = val;
+        });
+        document.querySelectorAll('.lang-pt').forEach(el => el.style.display = lang === 'pt' ? '' : 'none');
+        document.querySelectorAll('.lang-en').forEach(el => el.style.display = lang === 'en' ? '' : 'none');
+        document.documentElement.lang = lang === 'pt' ? 'pt-BR' : 'en';
+        document.querySelectorAll('.lang-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.id === 'btn-' + lang);
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        // Lang toggle — event delegation, same pattern as script.js
+        document.body.addEventListener('click', (e) => {
+            const btn = e.target.closest('.lang-btn');
+            if (btn && btn.id) setLang(btn.id.replace('btn-', ''));
+        });
+
+        // Hamburger menu
+        const hamburger = document.querySelector('.hamburger');
+        const navLinks  = document.querySelector('.nav-links');
+        if (hamburger) hamburger.addEventListener('click', () => navLinks.classList.toggle('active'));
+
+        setLang(currentLang);
+    });
+</script>
+
+</body>
+</html>

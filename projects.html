@@ -7,25 +7,36 @@
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="stylesheet" href="style.css">
     <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
-    <style>.page-isolada { padding-top: 120px; min-height: 100vh; }</style>
 </head>
 <body>
 
     <nav class="navbar">
         <div class="logo"><span>0x</span>Robert<span>_</span></div>
         <ul class="nav-links">
-            <li><a href="index.html">Sobre</a></li>
-            <li><a href="curriculo.html">Currículo</a></li>
-            <li><a href="projetos.html" style="color: var(--accent);">Projetos</a></li>
+            <li><a href="index.html" data-pt="Sobre" data-en="About">Sobre</a></li>
+            <li><a href="resume.html" class="active" data-pt="Currículo" data-en="Resume">Currículo</a></li>
+            <li><a href="projects.html" data-pt="Projetos" data-en="Projects">Projetos</a></li>
             <li><a href="posts.html">Posts</a></li>
         </ul>
+        <div class="navbar-right">
+            <div class="lang-toggle">
+                <button class="lang-btn active" id="btn-pt">PT</button>
+                <button class="lang-btn" id="btn-en">EN</button>
+            </div>
+            <div class="hamburger"><i class='bx bx-menu'></i></div>
+        </div>
     </nav>
+
     <main id="app-root">
-        <h2 class="section-title">Projetos</h2>
         <section class="section page-isolada bg-darker">
+            <h2 class="section-title" data-pt="Projetos" data-en="Projects">Projetos</h2>
             <div class="projects-grid" id="projetos-container"></div>
         </section>
     </main>
+
+    <footer>
+        <p>&copy; 2026 Robert Souza Lages.</p>
+    </footer>
 
     <script src="script.js"></script>
 </body>
