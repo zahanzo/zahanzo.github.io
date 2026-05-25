@@ -1,12 +1,52 @@
 [
-    {
-        "id": "nativastub-gen-zero-dependency",
-        "title": "Bypassing the C Runtime: Zero Imports & Direct Syscalls",
-        "category": "low-level",
-        "tag": "LOW-LEVEL",
-        "date": "2026-05-24",
-        "description": "Como construí o NativaStub Gen para extrair SSNs da ntdll.dll e migrei de MASM/C++ para NASM/C puro — resultando em um executável com zero importações e zero dependências de DLL.",
-        "description_en": "How I built NativaStub Gen to extract SSNs from ntdll.dll and migrated from MASM/C++ to pure NASM/C — resulting in an executable with zero imports and zero DLL dependencies.",
-        "url": "posts/nativastub.html"
-    }
+  {
+    "id": "nativastub-gen-zero-dependency",
+    "title": "Bypassing the C Runtime: Zero Imports & Direct Syscalls",
+    "category": "low-level",
+    "tag": "LOW-LEVEL",
+    "date": "2026-05-24",
+    "description": "Como construí o NativaStub Gen para extrair SSNs da ntdll.dll e migrei de MASM/C++ para NASM/C puro — resultando em um executável com zero importações e zero dependências de DLL.",
+    "description_en": "How I built NativaStub Gen to extract SSNs from ntdll.dll and migrated from MASM/C++ to pure NASM/C — resulting in an executable with zero imports and zero DLL dependencies.",
+    "url": "posts/nativastub.html"
+  },
+  {
+    "id": "under-the-hood",
+    "title": "Under the hood: What happen when you click a icon?",
+    "category": "low-level",
+    "tag": "LOW-LEVEL",
+    "date": "2026-05-25",
+    "description": "Uma introdução acessível aos três pilares de todo sistema operacional — Stack, Memória Virtual e Interrupções — explicados com analogias do mundo real, sem código.",
+    "description_en": "An accessible introduction to the three pillars of every operating system — Stack, Virtual Memory, and Interrupts — explained through real-world analogies, without a single line of code.",
+    "url": "posts/under-the-hood.html"
+  },
+  {
+    "id": "stack-x86-anatomy",
+    "title": "The x86_64 Stack: Anatomy, Mechanics and Security",
+    "category": "low-level",
+    "tag": "LOW-LEVEL",
+    "date": "2026-05-25",
+    "description": "Análise técnica da pilha de memória em x86_64 — RSP/RBP, stack frames, prólogo e epílogo, convenções de chamada (System V ABI) e vulnerabilidades de buffer overflow.",
+    "description_en": "Technical deep-dive into the x86_64 memory stack — RSP/RBP, stack frames, prologue and epilogue, calling conventions (System V ABI), and buffer overflow vulnerabilities.",
+    "url": "posts/stack-x86.html"
+  },
+  {
+    "id": "paging-x86-virtual-memory",
+    "title": "Virtual Memory & Paging: Como o CPU Monta a Ilusão",
+    "category": "low-level",
+    "tag": "KERNEL",
+    "date": "2026-05-25",
+    "description": "Do CR3 ao frame físico — hierarquia PML4/PDPT/PD/PT, MMU, TLB shootdown, manipulação de PTEs em C, Page Fault e mitigações de segurança (NX, ASLR, SMEP, KPTI).",
+    "description_en": "From CR3 to physical frame — PML4/PDPT/PD/PT hierarchy, MMU, TLB shootdown, PTE manipulation in C, Page Fault flow, and security mitigations (NX, ASLR, SMEP, KPTI).",
+    "url": "posts/paging-x86.html"
+  },
+  {
+    "id": "idt-interrupt-handling",
+    "title": "IDT & Interrupt Handling: O que o CPU Faz no Microssegundo da Interrupção",
+    "category": "low-level",
+    "tag": "KERNEL",
+    "date": "2026-05-25",
+    "description": "Da IDT ao IRETQ — Gate Descriptors, Interrupt vs Trap Gate, fluxo atômico da CPU, TSS/IST, ISR em Assembly+C, APIC vs PIC 8259 e Top Half/Bottom Half.",
+    "description_en": "From IDT to IRETQ — Gate Descriptors, Interrupt vs Trap Gate, CPU atomic flow, TSS/IST, Assembly+C ISR, APIC vs PIC 8259, and Top Half/Bottom Half.",
+    "url": "posts/idt-x86.html"
+  }
 ]

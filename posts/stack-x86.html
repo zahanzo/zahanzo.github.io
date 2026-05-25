@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A Stack em x86_64 — Anatomia e Mecânica | Robert Souza Lages</title>
+    <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+    <link rel="stylesheet" href="style.css">
+    <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
+</head>
+<body>
+
+<!-- ── NAVBAR ── -->
+<nav class="navbar">
+    <div class="logo"><span>0x</span>Robert<span>_</span></div>
+    <ul class="nav-links">
+        <li><a href="../index.html"    data-pt="Sobre"    data-en="About">Sobre</a></li>
+        <li><a href="../resume.html"   data-pt="Currículo" data-en="Resume">Currículo</a></li>
+        <li><a href="../projects.html" data-pt="Projetos"  data-en="Projects">Projetos</a></li>
+        <li><a href="../posts.html" class="active">Posts</a></li>
+    </ul>
+    <div class="navbar-right">
+        <div class="lang-toggle">
+            <button class="lang-btn active" id="btn-pt">PT</button>
+            <button class="lang-btn"        id="btn-en">EN</button>
+        </div>
+        <div class="hamburger"><i class='bx bx-menu'></i></div>
+    </div>
+</nav>
+
+<!-- ── MAIN ── -->
+<main>
+<article class="post-wrapper">
+
+    <!-- HEADER -->
+    <header class="post-header">
+        <div class="post-breadcrumb">
+            <a href="../posts.html">posts</a><span>/</span><span>stack-x86</span>
+        </div>
+        <div class="post-meta">
+            <span class="post-tag">LOW-LEVEL</span>
+            <span class="post-tag">ARCHITECTURE</span>
+            <time class="post-date" datetime="2026-05-25">2026-05-25</time>
+        </div>
+        <h1 class="post-title">
+            <span data-pt="A Stack em x86_64:" data-en="The x86_64 Stack:">A Stack em x86_64:</span><br>
+            <span data-pt="Anatomia, Mecânica e Segurança" data-en="Anatomy, Mechanics and Security">Anatomia, Mecânica e Segurança</span>
+        </h1>
+        <p class="post-summary lang-pt">
+            Uma análise técnica do funcionamento mecânico da pilha de memória em arquitetura x86_64 —
+            desde o layout de endereços e o papel dos registradores <code>RSP</code>/<code>RBP</code>
+            até stack frames, convenções de chamada e vulnerabilidades de buffer overflow.
+        </p>
+        <p class="post-summary lang-en" style="display:none">
+            A technical deep-dive into the mechanical operation of the memory stack in x86_64 —
+            from address layout and the role of <code>RSP</code>/<code>RBP</code> registers
+            to stack frames, calling conventions, and buffer overflow vulnerabilities.
+        </p>
+
+        <div class="toc lang-pt">
+            <div class="toc-title">// ÍNDICE</div>
+            <ol>
+                <li><a href="#layout">Arquitetura e Layout de Memória</a></li>
+                <li><a href="#frame">Stack Frame: Prólogo e Epílogo</a></li>
+                <li><a href="#dados">Gerenciamento de Dados</a></li>
+                <li><a href="#c-vs-asm">C vs. Assembly: a tradução do compilador</a></li>
+                <li><a href="#abi">Convenções de Chamada (System V AMD64 ABI)</a></li>
+                <li><a href="#seguranca">Segurança: Stack Buffer Overflow</a></li>
+            </ol>
+        </div>
+        <div class="toc lang-en" style="display:none">
+            <div class="toc-title">// TABLE OF CONTENTS</div>
+            <ol>
+                <li><a href="#layout">Architecture and Memory Layout</a></li>
+                <li><a href="#frame">Stack Frame: Prologue and Epilogue</a></li>
+                <li><a href="#dados">Data Management</a></li>
+                <li><a href="#c-vs-asm">C vs. Assembly: the compiler translation</a></li>
+                <li><a href="#abi">Calling Conventions (System V AMD64 ABI)</a></li>
+                <li><a href="#seguranca">Security: Stack Buffer Overflow</a></li>
+            </ol>
+        </div>
+    </header>
+
+    <!-- 01 — LAYOUT -->
+    <section class="post-section" id="layout">
+        <div class="section-label">01</div>
+        <h2 data-pt="Arquitetura e Layout de Memória" data-en="Architecture and Memory Layout">
+            Arquitetura e Layout de Memória
+        </h2>
+
+        <p class="lang-pt">
+            O espaço de endereçamento de um processo em x86_64 é dividido em regiões com propósitos distintos.
+            A stack ocupa a região de <strong style="color:#fff">endereços altos</strong> do espaço virtual e
+            cresce em direção aos endereços mais baixos a cada alocação. Esse comportamento é contra-intuitivo
+            à primeira vista, mas é uma convenção de hardware que remonta às primeiras arquiteturas x86.
+        </p>
+        <p class="lang-en" style="display:none">
+            A process's address space in x86_64 is divided into regions with distinct purposes.
+            The stack occupies the <strong style="color:#fff">high-address</strong> region of virtual space
+            and grows toward lower addresses with each allocation. This behavior is counterintuitive at first,
+            but it is a hardware convention that dates back to the earliest x86 architectures.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="layout de memória de um processo (simplificado)" data-en="process memory layout (simplified)">layout de memória de um processo (simplificado)</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  0xFFFFFFFFFFFFFFFF  ┌─────────────────────────┐
+                      │   kernel space          │  (inaccessible to userland)
+  0xFFFF800000000000  ├─────────────────────────┤
+                      │                         │
+                      │   stack  ↓ grows down   │  ← RSP starts here (high addr)
+                      │   ...                   │
+                      ├─────────────────────────┤
+                      │   (unmapped gap)        │
+                      ├─────────────────────────┤
+                      │   heap   ↑ grows up     │  ← malloc/new live here
+                      ├─────────────────────────┤
+                      │   BSS  (uninit globals) │
+                      ├─────────────────────────┤
+                      │   data (init globals)   │
+                      ├─────────────────────────┤
+                      │   text (code / .text)   │
+  0x0000000000400000  └─────────────────────────┘
+</pre>
+        </div>
+
+        <h3>// RSP — Stack Pointer</h3>
+        <p class="lang-pt">
+            <code>RSP</code> é o registrador de 64 bits que aponta <strong style="color:#fff">sempre para o topo
+            atual da stack</strong> — o endereço mais baixo atualmente ocupado. Cada <code>push</code>
+            decrementa <code>RSP</code> em 8 bytes e grava o valor; cada <code>pop</code> lê o valor e
+            incrementa <code>RSP</code> em 8 bytes. O hardware do processador atualiza <code>RSP</code>
+            automaticamente nessas instruções.
+        </p>
+        <p class="lang-en" style="display:none">
+            <code>RSP</code> is the 64-bit register that <strong style="color:#fff">always points to the
+            current top of the stack</strong> — the lowest currently occupied address. Each <code>push</code>
+            decrements <code>RSP</code> by 8 bytes and writes the value; each <code>pop</code> reads the value
+            and increments <code>RSP</code> by 8 bytes. The processor hardware updates <code>RSP</code>
+            automatically on those instructions.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">push / pop mechanics</span>
+                <span class="code-lang">asm</span>
+            </div>
+<pre><span class="cm">; PUSH: decrements RSP first, then writes</span>
+<span class="kw">push</span>  <span class="reg">rax</span>
+<span class="cm">; equivalent to:</span>
+<span class="kw">sub</span>   <span class="reg">rsp</span>, <span class="num">8</span>
+<span class="kw">mov</span>   [<span class="reg">rsp</span>], <span class="reg">rax</span>
+
+<span class="cm">; POP: reads first, then increments RSP</span>
+<span class="kw">pop</span>   <span class="reg">rax</span>
+<span class="cm">; equivalent to:</span>
+<span class="kw">mov</span>   <span class="reg">rax</span>, [<span class="reg">rsp</span>]
+<span class="kw">add</span>   <span class="reg">rsp</span>, <span class="num">8</span></pre>
+        </div>
+
+        <h3>// RBP — Base Pointer (Frame Pointer)</h3>
+        <p class="lang-pt">
+            <code>RBP</code> aponta para a <strong style="color:#fff">base do stack frame atual</strong> —
+            o ponto de referência fixo de uma função. Enquanto <code>RSP</code> flutua com cada push/pop,
+            <code>RBP</code> permanece estático durante toda a execução de uma função. Isso permite que o
+            compilador acesse variáveis locais e argumentos por offsets fixos em relação a <code>RBP</code>
+            (e.g., <code>[rbp-8]</code>, <code>[rbp-16]</code>), independentemente do estado de <code>RSP</code>.
+        </p>
+        <p class="lang-en" style="display:none">
+            <code>RBP</code> points to the <strong style="color:#fff">base of the current stack frame</strong> —
+            the fixed reference point for a function. While <code>RSP</code> fluctuates with every push/pop,
+            <code>RBP</code> stays static for the entire duration of a function's execution. This allows the
+            compiler to access local variables and arguments via fixed offsets relative to <code>RBP</code>
+            (e.g., <code>[rbp-8]</code>, <code>[rbp-16]</code>), regardless of the current state of <code>RSP</code>.
+        </p>
+    </section>
+
+    <!-- 02 — STACK FRAME -->
+    <section class="post-section" id="frame">
+        <div class="section-label">02</div>
+        <h2 data-pt="Stack Frame: Prólogo e Epílogo" data-en="Stack Frame: Prologue and Epilogue">
+            Stack Frame: <span data-pt="Prólogo e Epílogo" data-en="Prologue and Epilogue">Prólogo e Epílogo</span>
+        </h2>
+
+        <p class="lang-pt">
+            Um <strong style="color:#fff">stack frame</strong> é a região da stack reservada para uma única
+            invocação de função. Ele contém o endereço de retorno, o <code>RBP</code> do chamador salvo,
+            as variáveis locais e, em alguns casos, argumentos extras. A criação e destruição de um frame
+            seguem um protocolo rígido denominado <em>prólogo</em> e <em>epílogo</em>.
+        </p>
+        <p class="lang-en" style="display:none">
+            A <strong style="color:#fff">stack frame</strong> is the stack region reserved for a single
+            function invocation. It contains the return address, the saved caller's <code>RBP</code>,
+            local variables, and in some cases extra arguments. Frame creation and destruction follow a
+            strict protocol called the <em>prologue</em> and <em>epilogue</em>.
+        </p>
+
+        <div class="flow-compare">
+            <div class="flow-col">
+                <div class="flow-col-title new">// <span data-pt="PRÓLOGO (entrada da função)" data-en="PROLOGUE (function entry)">PRÓLOGO (entrada da função)</span></div>
+                <div class="flow-step ok"><div class="dot"></div><code>push rbp</code> — <span data-pt="salva o RBP do chamador" data-en="saves caller's RBP">salva o RBP do chamador</span></div>
+                <div class="flow-step ok"><div class="dot"></div><code>mov rbp, rsp</code> — <span data-pt="RBP aponta para o topo atual" data-en="RBP anchors to current top">RBP aponta para o topo atual</span></div>
+                <div class="flow-step ok"><div class="dot"></div><code>sub rsp, N</code> — <span data-pt="reserva espaço para variáveis locais" data-en="reserves space for locals">reserva espaço para variáveis locais</span></div>
+            </div>
+            <div class="flow-col">
+                <div class="flow-col-title old">// <span data-pt="EPÍLOGO (saída da função)" data-en="EPILOGUE (function exit)">EPÍLOGO (saída da função)</span></div>
+                <div class="flow-step dim"><div class="dot"></div><code>leave</code> — <span data-pt="atalho para as duas instruções abaixo" data-en="shorthand for the two below">atalho para as duas instruções abaixo</span></div>
+                <div class="flow-step dim"><div class="dot"></div><code>mov rsp, rbp</code> — <span data-pt="descarta variáveis locais" data-en="discards local variables">descarta variáveis locais</span></div>
+                <div class="flow-step dim"><div class="dot"></div><code>pop rbp</code> — <span data-pt="restaura o RBP do chamador" data-en="restores caller's RBP">restaura o RBP do chamador</span></div>
+                <div class="flow-step dim"><div class="dot"></div><code>ret</code> — <span data-pt="salta para o endereço de retorno" data-en="jumps to return address">salta para o endereço de retorno</span></div>
+            </div>
+        </div>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="layout do stack frame durante execução de foo()" data-en="stack frame layout during foo() execution">layout do stack frame durante execução de foo()</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  <span class="cm">; High addresses (caller's territory)</span>
+  ┌──────────────────────────────────┐
+  │  caller's local variables / args │
+  ├──────────────────────────────────┤
+  │  return address (pushed by CALL) │  ← [rbp + 8]
+  ├──────────────────────────────────┤ ←  RBP  (frame base)
+  │  saved RBP  (caller's frame ptr) │  ← [rbp + 0]
+  ├──────────────────────────────────┤
+  │  local var  a   (8 bytes)        │  ← [rbp - 8]
+  ├──────────────────────────────────┤
+  │  local var  b   (8 bytes)        │  ← [rbp - 16]
+  ├──────────────────────────────────┤
+  │  local var  c   (8 bytes)        │  ← [rbp - 24]
+  ├──────────────────────────────────┤ ←  RSP  (stack top, grows ↓)
+  │  (unmapped)                      │
+  └──────────────────────────────────┘
+  <span class="cm">; Low addresses</span>
+</pre>
+        </div>
+
+        <div class="callout">
+            <p><strong data-pt="Por que salvar RBP?" data-en="Why save RBP?">Por que salvar RBP?</strong></p>
+            <p class="lang-pt">Ao entrar em <code>foo()</code>, o registrador <code>RBP</code> ainda contém o
+            valor do frame anterior (o chamador). Se simplesmente sobrescrevermos <code>RBP</code> com
+            <code>RSP</code>, perdemos o contexto do chamador. O <code>push rbp</code> preserva esse valor
+            na stack antes de <code>RBP</code> ser redirecionado. Na saída, o <code>pop rbp</code> restaura
+            exatamente esse valor, reconstruindo a cadeia de frames — que é o que debuggers usam para
+            gerar stack traces.</p>
+            <p class="lang-en" style="display:none">When entering <code>foo()</code>, the <code>RBP</code>
+            register still holds the previous frame's value (the caller's). If we simply overwrite
+            <code>RBP</code> with <code>RSP</code>, we lose the caller's context. The <code>push rbp</code>
+            preserves that value on the stack before <code>RBP</code> is redirected. On exit, <code>pop rbp</code>
+            restores exactly that value, reconstructing the frame chain — which is what debuggers use to
+            generate stack traces.</p>
+        </div>
+    </section>
+
+    <!-- 03 — DADOS -->
+    <section class="post-section" id="dados">
+        <div class="section-label">03</div>
+        <h2 data-pt="Gerenciamento de Dados na Stack" data-en="Data Management on the Stack">
+            <span data-pt="Gerenciamento de Dados na Stack" data-en="Data Management on the Stack">Gerenciamento de Dados na Stack</span>
+        </h2>
+
+        <h3>// <span data-pt="Variáveis Locais" data-en="Local Variables">Variáveis Locais</span></h3>
+        <p class="lang-pt">
+            O compilador determina em tempo de compilação o tamanho total das variáveis locais de uma função
+            e emite um único <code>sub rsp, N</code> no prólogo para reservar todo esse espaço de uma vez.
+            Cada variável recebe um offset fixo em relação a <code>RBP</code>. Não há instrução por variável;
+            o compilador simplesmente usa o endereço computado.
+        </p>
+        <p class="lang-en" style="display:none">
+            The compiler determines at compile time the total size of a function's local variables
+            and emits a single <code>sub rsp, N</code> in the prologue to reserve all that space at once.
+            Each variable is assigned a fixed offset relative to <code>RBP</code>. There is no per-variable
+            instruction; the compiler simply uses the computed address.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="acesso a variáveis locais via RBP" data-en="accessing local variables via RBP">acesso a variáveis locais via RBP</span>
+                <span class="code-lang">asm</span>
+            </div>
+<pre><span class="kw">sub</span>   <span class="reg">rsp</span>, <span class="num">24</span>          <span class="cm">; reserve 3 × 8 bytes for a, b, c</span>
+
+<span class="kw">mov</span>   <span class="kw">QWORD PTR</span> [<span class="reg">rbp</span>-<span class="num">8</span>],  <span class="num">10</span>  <span class="cm">; a = 10</span>
+<span class="kw">mov</span>   <span class="kw">QWORD PTR</span> [<span class="reg">rbp</span>-<span class="num">16</span>], <span class="num">20</span>  <span class="cm">; b = 20</span>
+<span class="kw">mov</span>   <span class="reg">rax</span>,  [<span class="reg">rbp</span>-<span class="num">8</span>]
+<span class="kw">add</span>   <span class="reg">rax</span>,  [<span class="reg">rbp</span>-<span class="num">16</span>]
+<span class="kw">mov</span>   <span class="kw">QWORD PTR</span> [<span class="reg">rbp</span>-<span class="num">24</span>], <span class="reg">rax</span>  <span class="cm">; c = a + b</span></pre>
+        </div>
+
+        <h3>// <span data-pt="Endereço de Retorno" data-en="Return Address">Endereço de Retorno</span></h3>
+        <p class="lang-pt">
+            A instrução <code>call foo</code> realiza duas operações atomicamente: empurra o endereço da
+            próxima instrução (o ponto de retorno) na stack, e então salta para <code>foo</code>. Quando
+            <code>ret</code> é executado, ele faz o caminho inverso: lê o endereço do topo da stack e salta
+            para ele. Esse endereço fica em <code>[rbp + 8]</code> dentro do frame da função chamada.
+        </p>
+        <p class="lang-en" style="display:none">
+            The <code>call foo</code> instruction performs two operations atomically: it pushes the address
+            of the next instruction (the return point) onto the stack, then jumps to <code>foo</code>. When
+            <code>ret</code> executes, it does the reverse: reads the address from the top of the stack and
+            jumps to it. That address lives at <code>[rbp + 8]</code> inside the called function's frame.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">call / ret mechanics</span>
+                <span class="code-lang">asm</span>
+            </div>
+<pre><span class="cm">; CALL: push return address, then jump</span>
+<span class="kw">call</span>  <span class="fn">foo</span>
+<span class="cm">; equivalent to:</span>
+<span class="kw">push</span>  <span class="reg">rip</span>            <span class="cm">; (conceptual — RIP is the next instruction's addr)</span>
+<span class="kw">jmp</span>   <span class="fn">foo</span>
+
+<span class="cm">; RET: pop return address and jump to it</span>
+<span class="kw">ret</span>
+<span class="cm">; equivalent to:</span>
+<span class="kw">pop</span>   <span class="reg">rip</span>            <span class="cm">; (conceptual — loads address back into RIP)</span></pre>
+        </div>
+    </section>
+
+    <!-- 04 — C VS ASM -->
+    <section class="post-section" id="c-vs-asm">
+        <div class="section-label">04</div>
+        <h2 data-pt="C vs. Assembly: a tradução do compilador" data-en="C vs. Assembly: the compiler translation">
+            C vs. Assembly: <span data-pt="a tradução do compilador" data-en="the compiler translation">a tradução do compilador</span>
+        </h2>
+
+        <p class="lang-pt">
+            O exemplo abaixo mostra a tradução de uma função C simples para Assembly x86_64, compilado com
+            <code>gcc -O0</code> (sem otimizações, para preservar o stack frame explícito) no Linux com a
+            ABI System V.
+        </p>
+        <p class="lang-en" style="display:none">
+            The example below shows the translation of a simple C function to x86_64 Assembly, compiled with
+            <code>gcc -O0</code> (no optimizations, to preserve the explicit stack frame) on Linux with the
+            System V ABI.
+        </p>
+
+        <div class="diff-grid">
+            <div class="diff-col">
+                <div class="diff-header new">// C source</div>
+<pre><span class="pp">#include</span> <span class="str">&lt;stdio.h&gt;</span>
+
+<span class="tp">int</span> <span class="fn">add</span>(<span class="tp">int</span> a, <span class="tp">int</span> b) {
+    <span class="tp">int</span> result = a + b;
+    <span class="kw">return</span> result;
+}
+
+<span class="tp">int</span> <span class="fn">main</span>(<span class="tp">void</span>) {
+    <span class="tp">int</span> x = <span class="fn">add</span>(<span class="num">3</span>, <span class="num">7</span>);
+    <span class="kw">return</span> <span class="num">0</span>;
+}</pre>
+            </div>
+            <div class="diff-col">
+                <div class="diff-header new">// gcc -O0 x86_64 output (System V)</div>
+<pre><span class="fn">add</span>:
+    <span class="kw">push</span>   <span class="reg">rbp</span>
+    <span class="kw">mov</span>    <span class="reg">rbp</span>, <span class="reg">rsp</span>
+    <span class="kw">sub</span>    <span class="reg">rsp</span>, <span class="num">16</span>
+    <span class="kw">mov</span>    [<span class="reg">rbp</span>-<span class="num">20</span>], <span class="reg">edi</span>  <span class="cm">; spill param a</span>
+    <span class="kw">mov</span>    [<span class="reg">rbp</span>-<span class="num">24</span>], <span class="reg">esi</span>  <span class="cm">; spill param b</span>
+    <span class="kw">mov</span>    <span class="reg">edx</span>, [<span class="reg">rbp</span>-<span class="num">20</span>]
+    <span class="kw">mov</span>    <span class="reg">eax</span>, [<span class="reg">rbp</span>-<span class="num">24</span>]
+    <span class="kw">add</span>    <span class="reg">eax</span>, <span class="reg">edx</span>
+    <span class="kw">mov</span>    [<span class="reg">rbp</span>-<span class="num">4</span>],  <span class="reg">eax</span>  <span class="cm">; result = a + b</span>
+    <span class="kw">mov</span>    <span class="reg">eax</span>, [<span class="reg">rbp</span>-<span class="num">4</span>]   <span class="cm">; return value → EAX</span>
+    <span class="kw">leave</span>
+    <span class="kw">ret</span>
+
+<span class="fn">main</span>:
+    <span class="kw">push</span>   <span class="reg">rbp</span>
+    <span class="kw">mov</span>    <span class="reg">rbp</span>, <span class="reg">rsp</span>
+    <span class="kw">sub</span>    <span class="reg">rsp</span>, <span class="num">16</span>
+    <span class="kw">mov</span>    <span class="reg">esi</span>, <span class="num">7</span>          <span class="cm">; arg b → RSI (2nd arg)</span>
+    <span class="kw">mov</span>    <span class="reg">edi</span>, <span class="num">3</span>          <span class="cm">; arg a → RDI (1st arg)</span>
+    <span class="kw">call</span>   <span class="fn">add</span>
+    <span class="kw">mov</span>    [<span class="reg">rbp</span>-<span class="num">4</span>],  <span class="reg">eax</span>  <span class="cm">; x = return value</span>
+    <span class="kw">mov</span>    <span class="reg">eax</span>, <span class="num">0</span>
+    <span class="kw">leave</span>
+    <span class="kw">ret</span></pre>
+            </div>
+        </div>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="estado da stack durante add(3, 7)" data-en="stack state during add(3, 7)">estado da stack durante add(3, 7)</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  <span class="cm">; --- Inside main(), just before CALL add ---</span>
+  ┌──────────────────────────────────────┐ ← main's RBP
+  │  saved RBP  (program's frame ptr)    │
+  ├──────────────────────────────────────┤
+  │  x  (int, 4 bytes, uninitialized)    │  [rbp-4]
+  │  (padding / alignment)              │
+  ├──────────────────────────────────────┤ ← main's RSP
+  │  RDI=3, RSI=7 already loaded        │  (registers, not stack)
+
+  <span class="cm">; --- After CALL add (inside add's prologue) ---</span>
+  ┌──────────────────────────────────────┐ ← main's frame (above)
+  │  return address  (next instr in main)│  ← [rbp+8]  (pushed by CALL)
+  ├──────────────────────────────────────┤ ← add's RBP (after push rbp + mov rbp,rsp)
+  │  saved RBP  (main's frame ptr)       │  [rbp+0]
+  ├──────────────────────────────────────┤
+  │  result  (int)                       │  [rbp-4]
+  │  (alignment padding)                 │
+  │  a  (spilled from EDI)               │  [rbp-20]
+  │  b  (spilled from ESI)               │  [rbp-24]
+  ├──────────────────────────────────────┤ ← add's RSP
+</pre>
+        </div>
+    </section>
+
+    <!-- 05 — ABI -->
+    <section class="post-section" id="abi">
+        <div class="section-label">05</div>
+        <h2 data-pt="Convenções de Chamada — System V AMD64 ABI" data-en="Calling Conventions — System V AMD64 ABI">
+            <span data-pt="Convenções de Chamada" data-en="Calling Conventions">Convenções de Chamada</span> — System V AMD64 ABI
+        </h2>
+
+        <p class="lang-pt">
+            A ABI (Application Binary Interface) define o contrato entre quem chama e quem é chamado.
+            Em Linux e macOS x86_64, a <strong style="color:#fff">System V AMD64 ABI</strong> especifica
+            onde os argumentos devem estar, quem preserva quais registradores, e como o valor de retorno
+            é comunicado.
+        </p>
+        <p class="lang-en" style="display:none">
+            The ABI (Application Binary Interface) defines the contract between caller and callee.
+            On Linux and macOS x86_64, the <strong style="color:#fff">System V AMD64 ABI</strong> specifies
+            where arguments must be placed, which registers each side must preserve, and how the return
+            value is communicated.
+        </p>
+
+        <h3>// <span data-pt="Passagem de Argumentos Inteiros/Ponteiros" data-en="Integer/Pointer Argument Passing">Passagem de Argumentos Inteiros/Ponteiros</span></h3>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="ordem dos registradores para os primeiros 6 argumentos" data-en="register order for the first 6 arguments">ordem dos registradores para os primeiros 6 argumentos</span>
+                <span class="code-lang">asm</span>
+            </div>
+<pre><span class="cm">; int func(a,     b,     c,     d,     e,     f,     g,   h)</span>
+<span class="cm">;          RDI    RSI    RDX    RCX    R8     R9    [stack+8] [stack+16]</span>
+
+<span class="cm">; The 7th argument onwards are pushed on the stack, right-to-left.</span>
+<span class="cm">; The return value is in RAX (or RDX:RAX for 128-bit values).</span>
+
+<span class="fn">example_call</span>:
+    <span class="kw">mov</span>  <span class="reg">rdi</span>, <span class="num">1</span>      <span class="cm">; arg 1</span>
+    <span class="kw">mov</span>  <span class="reg">rsi</span>, <span class="num">2</span>      <span class="cm">; arg 2</span>
+    <span class="kw">mov</span>  <span class="reg">rdx</span>, <span class="num">3</span>      <span class="cm">; arg 3</span>
+    <span class="kw">mov</span>  <span class="reg">rcx</span>, <span class="num">4</span>      <span class="cm">; arg 4</span>
+    <span class="kw">mov</span>  <span class="reg">r8</span>,  <span class="num">5</span>      <span class="cm">; arg 5</span>
+    <span class="kw">mov</span>  <span class="reg">r9</span>,  <span class="num">6</span>      <span class="cm">; arg 6</span>
+    <span class="kw">push</span> <span class="num">8</span>          <span class="cm">; arg 8 pushed first (right-to-left)</span>
+    <span class="kw">push</span> <span class="num">7</span>          <span class="cm">; arg 7</span>
+    <span class="kw">call</span> <span class="fn">func</span>
+    <span class="kw">add</span>  <span class="reg">rsp</span>, <span class="num">16</span>    <span class="cm">; caller cleans up stack args</span></pre>
+        </div>
+
+        <h3>// <span data-pt="Registradores: quem preserva o quê?" data-en="Registers: who preserves what?">Registradores: quem preserva o quê?</span></h3>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="callee-saved vs caller-saved (System V AMD64)" data-en="callee-saved vs caller-saved (System V AMD64)">callee-saved vs caller-saved (System V AMD64)</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  <span class="cm">; CALLER-SAVED (volatile) — callee may destroy these freely:</span>
+  <span class="reg">RAX  RCX  RDX  RSI  RDI  R8  R9  R10  R11</span>
+  <span class="cm">; The CALLER must save these before CALL if it needs them after.</span>
+
+  <span class="cm">; CALLEE-SAVED (non-volatile) — callee MUST restore before RET:</span>
+  <span class="reg">RBX  RBP  R12  R13  R14  R15  RSP</span>
+  <span class="cm">; The CALLEE must push/pop these if it uses them.</span>
+</pre>
+        </div>
+
+        <div class="callout warn">
+            <p><strong data-pt="Stack Alignment" data-en="Stack Alignment">Stack Alignment</strong></p>
+            <p class="lang-pt">A System V ABI exige que <code>RSP</code> esteja alinhado a 16 bytes
+            <strong style="color:#fff">no momento do <code>call</code></strong>. Como o próprio <code>call</code>
+            empurra 8 bytes (o endereço de retorno), <code>RSP</code> dentro da função estará desalinhado em 8.
+            Por isso o prólogo usa <code>sub rsp, N</code> onde <code>N</code> é múltiplo de 16 — para
+            restaurar o alinhamento antes de qualquer instrução SSE/AVX que exija memória alinhada.</p>
+            <p class="lang-en" style="display:none">The System V ABI requires <code>RSP</code> to be
+            16-byte aligned <strong style="color:#fff">at the point of <code>call</code></strong>. Since
+            <code>call</code> itself pushes 8 bytes (the return address), <code>RSP</code> inside the
+            function will be misaligned by 8. That is why the prologue uses <code>sub rsp, N</code> where
+            <code>N</code> is a multiple of 16 — to restore alignment before any SSE/AVX instruction that
+            requires aligned memory.</p>
+        </div>
+    </section>
+
+    <!-- 06 — SEGURANÇA -->
+    <section class="post-section" id="seguranca">
+        <div class="section-label">06</div>
+        <h2 data-pt="Segurança: Stack Buffer Overflow" data-en="Security: Stack Buffer Overflow">
+            <span data-pt="Segurança: Stack Buffer Overflow" data-en="Security: Stack Buffer Overflow">Segurança: Stack Buffer Overflow</span>
+        </h2>
+
+        <p class="lang-pt">
+            Compreender a stack não é apenas um exercício teórico — é o fundamento de uma das classes de
+            vulnerabilidades mais exploradas da história da computação. O <strong style="color:#fff">Stack Buffer
+            Overflow</strong> ocorre quando dados são escritos em um buffer local além dos seus limites,
+            sobrescrevendo regiões adjacentes do frame.
+        </p>
+        <p class="lang-en" style="display:none">
+            Understanding the stack is not merely a theoretical exercise — it is the foundation of one of
+            the most exploited vulnerability classes in computing history. A <strong style="color:#fff">Stack
+            Buffer Overflow</strong> occurs when data is written into a local buffer beyond its bounds,
+            overwriting adjacent regions of the stack frame.
+        </p>
+
+        <h3>// <span data-pt="O código vulnerável" data-en="The vulnerable code">O código vulnerável</span></h3>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="função vulnerável — sem checagem de bounds" data-en="vulnerable function — no bounds check">função vulnerável — sem checagem de bounds</span>
+                <span class="code-lang">c</span>
+            </div>
+<pre><span class="pp">#include</span> <span class="str">&lt;string.h&gt;</span>
+
+<span class="tp">void</span> <span class="fn">vulnerable</span>(<span class="tp">char</span> *input) {
+    <span class="tp">char</span> buffer[<span class="num">64</span>];          <span class="cm">// 64 bytes allocated on stack</span>
+    <span class="fn">strcpy</span>(buffer, input);    <span class="cm">// NO bounds check — classic mistake</span>
+}                             <span class="cm">// if len(input) > 64: overflow!</span></pre>
+        </div>
+
+        <h3>// <span data-pt="O que acontece na memória" data-en="What happens in memory">O que acontece na memória</span></h3>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="stack antes e depois do overflow" data-en="stack before and after the overflow">stack antes e depois do overflow</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  <span class="cm">; --- BEFORE overflow (normal state) ---</span>
+  ┌──────────────────────────────────────┐
+  │  return address   0x00400512         │  ← [rbp+8]  legitimate
+  ├──────────────────────────────────────┤ ← RBP
+  │  saved RBP        0x7fffffffe3b0     │
+  ├──────────────────────────────────────┤
+  │  buffer[0..63]    "AAAA..."          │  64 bytes
+  ├──────────────────────────────────────┤ ← RSP
+
+  <span class="cm">; --- AFTER overflow (input = 80 bytes of 'A' + attacker addr) ---</span>
+  ┌──────────────────────────────────────┐
+  │  return address   <span class="num">0x4141414141414141</span> │  ← OVERWRITTEN with 'AAAA...'
+  ├──────────────────────────────────────┤ ← RBP (also corrupted)
+  │  saved RBP        <span class="num">0x4141414141414141</span> │  ← OVERWRITTEN
+  ├──────────────────────────────────────┤
+  │  buffer[0..63]    "AAAA...AAAA..."   │  ← filled
+  │  buffer[64..71]   "AAAAAAAA"         │  ← overflows into saved RBP
+  │  buffer[72..79]   <span class="num">0xDEADBEEFCAFEBABE</span> │  ← overwrites return address!
+  ├──────────────────────────────────────┤
+</pre>
+        </div>
+
+        <p class="lang-pt">
+            Quando <code>ret</code> é executado, o processador carrega <code>0xDEADBEEFCAFEBABE</code>
+            em <code>RIP</code> e continua a execução nesse endereço — que pode ser código arbitrário
+            do atacante (shellcode), outro ponto do próprio binário (<em>ret2libc</em>), ou uma cadeia
+            de gadgets ROP (<em>Return-Oriented Programming</em>).
+        </p>
+        <p class="lang-en" style="display:none">
+            When <code>ret</code> executes, the processor loads <code>0xDEADBEEFCAFEBABE</code> into
+            <code>RIP</code> and continues execution there — which may be the attacker's arbitrary code
+            (shellcode), another point in the binary (<em>ret2libc</em>), or a chain of ROP gadgets
+            (<em>Return-Oriented Programming</em>).
+        </p>
+
+        <h3>// <span data-pt="Mitigações Modernas" data-en="Modern Mitigations">Mitigações Modernas</span></h3>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="camadas de defesa no kernel/compilador/hardware" data-en="layers of defense in kernel/compiler/hardware">camadas de defesa no kernel/compilador/hardware</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  <span class="op">Stack Canary</span>    <span class="cm">│ gcc -fstack-protector</span>
+                  <span class="cm">│ A random value placed between locals and return address.</span>
+                  <span class="cm">│ Checked before RET — mismatch aborts the process.</span>
+                  <span class="cm">│ Bypassed by: info leak + overwrite with correct canary.</span>
+
+  <span class="op">NX / DEP</span>        <span class="cm">│ Hardware (Intel XD bit / AMD NX bit)</span>
+                  <span class="cm">│ Marks stack pages as non-executable.</span>
+                  <span class="cm">│ Shellcode injected on stack cannot be executed.</span>
+                  <span class="cm">│ Bypassed by: ROP (reuses existing executable code).</span>
+
+  <span class="op">ASLR</span>            <span class="cm">│ Kernel feature (randomize_va_space)</span>
+                  <span class="cm">│ Randomizes base addresses of stack, heap, and libraries.</span>
+                  <span class="cm">│ Attacker cannot predict where to redirect RIP.</span>
+                  <span class="cm">│ Bypassed by: info leak leaking a pointer into the space.</span>
+
+  <span class="op">CFI / Shadow Stack</span> <span class="cm">│ Intel CET (Control-flow Enforcement Technology)</span>
+                     <span class="cm">│ Hardware maintains a parallel shadow stack for return addrs.</span>
+                     <span class="cm">│ RET is validated against the shadow stack — overwrite fails.</span>
+</pre>
+        </div>
+
+        <div class="callout">
+            <p><strong data-pt="Por que ainda importa em 2026?" data-en="Why does it still matter in 2026?">Por que ainda importa em 2026?</strong></p>
+            <p class="lang-pt">Stack overflows em código C/C++ sem mitigações ainda são comuns em firmware,
+            sistemas embarcados, drivers e código legado. Mais importante: entender o mecanismo é pré-requisito
+            para compreender técnicas avançadas como ROP chains, heap feng shui e bypass de ASLR — que são
+            a base do exploit development moderno e, pelo lado defensivo, da análise de vulnerabilidades.</p>
+            <p class="lang-en" style="display:none">Stack overflows in unmitigated C/C++ code remain common
+            in firmware, embedded systems, drivers, and legacy code. More importantly, understanding the
+            mechanism is a prerequisite for advanced techniques such as ROP chains, heap feng shui, and
+            ASLR bypass — which form the foundation of modern exploit development and, on the defensive side,
+            of vulnerability research.</p>
+        </div>
+    </section>
+
+    <!-- POST NAV -->
+    <div class="post-nav">
+        <a href="../posts.html">
+            <i class='bx bx-arrow-back'></i>
+            <span data-pt="Voltar aos posts" data-en="Back to posts">Voltar aos posts</span>
+        </a>
+        <a href="https://github.com/zahanzo" target="_blank">
+            <span data-pt="Ver no GitHub" data-en="View on GitHub">Ver no GitHub</span>
+            <i class='bx bx-link-external'></i>
+        </a>
+    </div>
+
+</article>
+</main>
+
+<footer>
+    <p>&copy; 2026 Robert Souza Lages.</p>
+</footer>
+
+<script>
+    let currentLang = localStorage.getItem('lang') || 'pt';
+
+    function setLang(lang) {
+        currentLang = lang;
+        localStorage.setItem('lang', lang);
+        document.querySelectorAll('[data-pt], [data-en]').forEach(el => {
+            const val = el.getAttribute('data-' + lang);
+            if (val !== null) el.textContent = val;
+        });
+        document.querySelectorAll('.lang-pt').forEach(el => el.style.display = lang === 'pt' ? '' : 'none');
+        document.querySelectorAll('.lang-en').forEach(el => el.style.display = lang === 'en' ? '' : 'none');
+        document.documentElement.lang = lang === 'pt' ? 'pt-BR' : 'en';
+        document.querySelectorAll('.lang-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.id === 'btn-' + lang);
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        document.body.addEventListener('click', (e) => {
+            const btn = e.target.closest('.lang-btn');
+            if (btn && btn.id) setLang(btn.id.replace('btn-', ''));
+        });
+        const hamburger = document.querySelector('.hamburger');
+        const navLinks  = document.querySelector('.nav-links');
+        if (hamburger) hamburger.addEventListener('click', () => navLinks.classList.toggle('active'));
+        setLang(currentLang);
+    });
+</script>
+
+</body>
+</html>

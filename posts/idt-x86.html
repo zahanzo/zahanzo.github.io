@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IDT & Interrupt Handling em x86_64 | Robert Souza Lages</title>
+    <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+    <link rel="stylesheet" href="style.css">
+    <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
+</head>
+<body>
+
+<nav class="navbar">
+    <div class="logo"><span>0x</span>Robert<span>_</span></div>
+    <ul class="nav-links">
+        <li><a href="../index.html"    data-pt="Sobre"    data-en="About">Sobre</a></li>
+        <li><a href="../resume.html"   data-pt="Currículo" data-en="Resume">Currículo</a></li>
+        <li><a href="../projects.html" data-pt="Projetos"  data-en="Projects">Projetos</a></li>
+        <li><a href="../posts.html" class="active">Posts</a></li>
+    </ul>
+    <div class="navbar-right">
+        <div class="lang-toggle">
+            <button class="lang-btn active" id="btn-pt">PT</button>
+            <button class="lang-btn"        id="btn-en">EN</button>
+        </div>
+        <div class="hamburger"><i class='bx bx-menu'></i></div>
+    </div>
+</nav>
+
+<main>
+<article class="post-wrapper">
+
+    <header class="post-header">
+        <div class="post-breadcrumb">
+            <a href="../posts.html">posts</a><span>/</span><span>idt-x86</span>
+        </div>
+        <div class="post-meta">
+            <span class="post-tag">KERNEL</span>
+            <span class="post-tag">ARCHITECTURE</span>
+            <span class="post-tag">LOW-LEVEL</span>
+            <time class="post-date" datetime="2026-05-25">2026-05-25</time>
+        </div>
+        <h1 class="post-title">
+            <span data-pt="IDT & Interrupt Handling:" data-en="IDT & Interrupt Handling:">IDT & Interrupt Handling:</span><br>
+            <span data-pt="O que o CPU Faz no Microssegundo da Interrupção" data-en="What the CPU Does in the Microsecond of the Interrupt">O que o CPU Faz no Microssegundo da Interrupção</span>
+        </h1>
+        <p class="post-summary lang-pt">
+            Da chegada do sinal de hardware ao <code>IRETQ</code> — uma análise mecânica do tratamento
+            de interrupções em x86_64: a estrutura da IDT e seus Gate Descriptors, o que exatamente
+            o processador empurra na stack, a troca de pilha via TSS, ISRs em Assembly + C, o modelo
+            PIC vs APIC e a divisão Top Half / Bottom Half.
+        </p>
+        <p class="post-summary lang-en" style="display:none">
+            From the hardware signal to <code>IRETQ</code> — a mechanical analysis of interrupt
+            handling in x86_64: the IDT structure and its Gate Descriptors, exactly what the processor
+            pushes onto the stack, TSS-based stack switching, Assembly + C ISRs, the PIC vs APIC model,
+            and the Top Half / Bottom Half split.
+        </p>
+
+        <div class="toc lang-pt">
+            <div class="toc-title">// ÍNDICE</div>
+            <ol>
+                <li><a href="#mecanismo">Polling vs. Interrupções: Faults, Traps e IRQs</a></li>
+                <li><a href="#idt">Anatomia da IDT: Gate Descriptors e IDTR</a></li>
+                <li><a href="#fluxo">O Fluxo Atômico: o que a CPU empurra na stack</a></li>
+                <li><a href="#isr">Implementação da ISR: Assembly + C + IRETQ</a></li>
+                <li><a href="#apic">APIC, Prioridades e Top Half / Bottom Half</a></li>
+            </ol>
+        </div>
+        <div class="toc lang-en" style="display:none">
+            <div class="toc-title">// TABLE OF CONTENTS</div>
+            <ol>
+                <li><a href="#mecanismo">Polling vs. Interrupts: Faults, Traps and IRQs</a></li>
+                <li><a href="#idt">IDT Anatomy: Gate Descriptors and IDTR</a></li>
+                <li><a href="#fluxo">The Atomic Flow: what the CPU pushes onto the stack</a></li>
+                <li><a href="#isr">ISR Implementation: Assembly + C + IRETQ</a></li>
+                <li><a href="#apic">APIC, Priorities and Top Half / Bottom Half</a></li>
+            </ol>
+        </div>
+    </header>
+
+    <!-- 01 — MECANISMO -->
+    <section class="post-section" id="mecanismo">
+        <div class="section-label">01</div>
+        <h2 data-pt="Polling vs. Interrupções: Faults, Traps e IRQs"
+            data-en="Polling vs. Interrupts: Faults, Traps and IRQs">
+            <span data-pt="Polling vs. Interrupções: Faults, Traps e IRQs"
+                  data-en="Polling vs. Interrupts: Faults, Traps and IRQs">Polling vs. Interrupções</span>
+        </h2>
+
+        <p class="lang-pt">
+            <strong style="color:#fff">Polling</strong> significa o CPU verificar ativamente e
+            repetidamente um registrador de status de dispositivo para detectar um evento. É determinístico
+            e simples, mas desperdiça 100% dos ciclos do núcleo enquanto aguarda — inaceitável para
+            um sistema com dezenas de dispositivos. <strong style="color:#fff">Interrupções</strong>
+            invertem o fluxo: o dispositivo sinaliza o CPU quando tem dados, e o CPU responde sob demanda.
+        </p>
+        <p class="lang-en" style="display:none">
+            <strong style="color:#fff">Polling</strong> means the CPU actively and repeatedly checks a
+            device status register to detect an event. It is deterministic and simple, but wastes 100%
+            of the core's cycles while waiting — unacceptable for a system with dozens of devices.
+            <strong style="color:#fff">Interrupts</strong> invert the flow: the device signals the CPU
+            when it has data, and the CPU responds on demand.
+        </p>
+
+        <h3>// <span data-pt="Três categorias de eventos" data-en="Three categories of events">Três categorias de eventos</span></h3>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="taxonomia de interrupções e exceções no x86_64" data-en="x86_64 interrupt and exception taxonomy">taxonomia de interrupções e exceções no x86_64</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  <span class="op">HARDWARE INTERRUPTS</span>  (IRQ — maskable via RFLAGS.IF=0)
+  ├── <span class="reg">Vectors 32–255</span>  — assigned by OS/BIOS/APIC
+  ├── Source: timer, keyboard, NIC, disk controller → via PIC or APIC
+  ├── Asynchronous: can arrive between ANY two instructions
+  └── CPU must send EOI (End Of Interrupt) to PIC/APIC before re-enabling
+
+  <span class="op">EXCEPTIONS</span>  (generated by the CPU itself — synchronous)
+  ├── <span class="kw">Faults</span>    RIP saved = faulting instruction (restartable after fix)
+  │   └── #PF (14), #GP (13), #SS (12), #NP (11), #TS (10), #DE (0)
+  ├── <span class="kw">Traps</span>     RIP saved = NEXT instruction (non-restartable)
+  │   └── #BP (3) INT3, #OF (4), #DB (1) single-step
+  └── <span class="kw">Aborts</span>    RIP may be invalid — non-recoverable
+      └── #DF (8) double fault, #MC (18) machine check
+
+  <span class="op">SOFTWARE INTERRUPTS</span>  (explicit instruction)
+  ├── INT n     — triggers vector n (legacy, slow, e.g. INT 0x80 for Linux syscall)
+  ├── SYSCALL   — fast path to ring 0 (no IDT lookup, uses MSR_LSTAR)
+  └── INT3      — single-byte breakpoint (0xCC), used by debuggers
+</pre>
+        </div>
+
+        <div class="callout">
+            <p><strong data-pt="Por que SYSCALL não usa a IDT?" data-en="Why doesn't SYSCALL use the IDT?">Por que <code>SYSCALL</code> não usa a IDT?</strong></p>
+            <p class="lang-pt"><code>INT 0x80</code> executa um lookup completo na IDT, troca de
+            privilégio via TSS e empurra o frame de interrupção completo — ~100+ ciclos. A instrução
+            <code>SYSCALL</code> (introduzida no AMD K6, mandatória em x86_64) usa um caminho otimizado:
+            o endereço do kernel handler é carregado do <code>MSR_LSTAR</code>, o RIP do usuário é salvo
+            em <code>RCX</code>, e RFLAGS em <code>R11</code>. Não há stack switch via TSS, não há push
+            automático de frame — o handler precisa fazer isso manualmente. É ~3× mais rápido, mas
+            exige que o kernel implemente o protocolo correto (como faz o Linux em
+            <code>entry_SYSCALL_64</code>).</p>
+            <p class="lang-en" style="display:none"><code>INT 0x80</code> performs a full IDT lookup,
+            privilege switch via TSS, and pushes the complete interrupt frame — ~100+ cycles. The
+            <code>SYSCALL</code> instruction (introduced in AMD K6, mandatory in x86_64) uses an
+            optimized path: the kernel handler address is loaded from <code>MSR_LSTAR</code>, the
+            user RIP is saved in <code>RCX</code>, and RFLAGS in <code>R11</code>. There is no TSS
+            stack switch, no automatic frame push — the handler must do this manually. It is ~3× faster,
+            but requires the kernel to implement the correct protocol (as Linux does in
+            <code>entry_SYSCALL_64</code>).</p>
+        </div>
+    </section>
+
+    <!-- 02 — IDT -->
+    <section class="post-section" id="idt">
+        <div class="section-label">02</div>
+        <h2 data-pt="Anatomia da IDT: Gate Descriptors e IDTR"
+            data-en="IDT Anatomy: Gate Descriptors and IDTR">
+            <span data-pt="Anatomia da IDT: Gate Descriptors e IDTR"
+                  data-en="IDT Anatomy: Gate Descriptors and IDTR">Anatomia da IDT</span>
+        </h2>
+
+        <p class="lang-pt">
+            A <strong style="color:#fff">IDT</strong> (Interrupt Descriptor Table) é um array de até
+            256 entradas de 16 bytes cada, localizado em qualquer endereço físico. O registro
+            <code>IDTR</code> (carregado com <code>LIDT</code>) aponta para ela: 16 bits de limite +
+            64 bits de base. Cada entrada é um <em>Gate Descriptor</em> que descreve como chegar ao
+            handler da interrupção e com qual privilégio.
+        </p>
+        <p class="lang-en" style="display:none">
+            The <strong style="color:#fff">IDT</strong> (Interrupt Descriptor Table) is an array of
+            up to 256 entries of 16 bytes each, located at any physical address. The <code>IDTR</code>
+            register (loaded with <code>LIDT</code>) points to it: 16-bit limit + 64-bit base. Each
+            entry is a <em>Gate Descriptor</em> that describes how to reach the interrupt handler and
+            with what privilege.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="estrutura de um Gate Descriptor de 16 bytes (64-bit mode)" data-en="16-byte Gate Descriptor structure (64-bit mode)">estrutura de um Gate Descriptor de 16 bytes (64-bit mode)</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  Bytes  0–1   Offset[15:0]   — low 16 bits of ISR address
+  Bytes  2–3   Selector       — code segment selector (usually kernel CS = 0x08)
+  Byte   4     IST[2:0]       — Interrupt Stack Table index (0 = use current stack)
+               Reserved[4:3]
+  Byte   5     Gate Type[3:0] — 0xE = Interrupt Gate | 0xF = Trap Gate
+               Zero[4]
+               DPL[6:5]       — Descriptor Privilege Level (0=ring0 only, 3=user allowed)
+               Present[7]     — must be 1 for valid entry
+  Bytes  6–7   Offset[31:16]  — middle 16 bits of ISR address
+  Bytes  8–11  Offset[63:32]  — high 32 bits of ISR address
+  Bytes 12–15  Reserved       — must be zero
+
+  ┌──────────────────────────────────────────────────────────────┐
+  │  ISR full address = Offset[63:32] : Offset[31:16] : Offset[15:0]  │
+  └──────────────────────────────────────────────────────────────┘
+</pre>
+        </div>
+
+        <h3>// Interrupt Gate vs Trap Gate — <span data-pt="a diferença crítica" data-en="the critical difference">a diferença crítica</span></h3>
+
+        <div class="flow-compare">
+            <div class="flow-col">
+                <div class="flow-col-title new">// <span data-pt="INTERRUPT GATE (Type 0xE)" data-en="INTERRUPT GATE (Type 0xE)">INTERRUPT GATE (Type 0xE)</span></div>
+                <div class="flow-step ok"><div class="dot"></div><span data-pt="Limpa RFLAGS.IF na entrada — interrupções desabilitadas" data-en="Clears RFLAGS.IF on entry — interrupts disabled">Limpa RFLAGS.IF — interrupções desabilitadas</span></div>
+                <div class="flow-step ok"><div class="dot"></div><span data-pt="Previne preempção enquanto o handler executa" data-en="Prevents preemption while handler runs">Previne preempção durante execução</span></div>
+                <div class="flow-step ok"><div class="dot"></div><span data-pt="Uso correto: IRQs de hardware (timer, teclado, NIC)" data-en="Correct use: hardware IRQs (timer, keyboard, NIC)">Uso: IRQs de hardware (timer, teclado, NIC)</span></div>
+                <div class="flow-step bad"><div class="dot"></div><span data-pt="ISR lenta com Interrupt Gate = latência do sistema toda presa" data-en="Slow ISR with Interrupt Gate = whole system latency frozen">ISR lenta = latência do sistema toda presa</span></div>
+            </div>
+            <div class="flow-col">
+                <div class="flow-col-title old">// <span data-pt="TRAP GATE (Type 0xF)" data-en="TRAP GATE (Type 0xF)">TRAP GATE (Type 0xF)</span></div>
+                <div class="flow-step dim"><div class="dot"></div><span data-pt="NÃO altera RFLAGS.IF — interrupções permanecem habilitadas" data-en="Does NOT alter RFLAGS.IF — interrupts remain enabled">NÃO altera IF — interrupções habilitadas</span></div>
+                <div class="flow-step dim"><div class="dot"></div><span data-pt="Interrupções de hardware podem preemptar o handler" data-en="Hardware IRQs can preempt the handler">IRQs podem preemptar o handler</span></div>
+                <div class="flow-step dim"><div class="dot"></div><span data-pt="Uso correto: breakpoints (#BP), single-step (#DB), overflow (#OF)" data-en="Correct use: breakpoints (#BP), single-step (#DB)">Uso: breakpoints (#BP), single-step (#DB)</span></div>
+                <div class="flow-step bad"><div class="dot"></div><span data-pt="Trap Gate em IRQ de hardware = interrupt nesting infinito possível" data-en="Trap Gate on hardware IRQ = infinite nesting possible">Em IRQ de hardware = nesting infinito possível</span></div>
+            </div>
+        </div>
+
+        <h3>// IST — <span data-pt="Interrupt Stack Table e o TSS" data-en="Interrupt Stack Table and the TSS">Interrupt Stack Table e o TSS</span></h3>
+
+        <p class="lang-pt">
+            O campo IST (3 bits) do Gate Descriptor referencia um dos 7 stacks alternativos definidos
+            no <strong style="color:#fff">TSS</strong> (Task State Segment). Quando uma exceção com
+            IST≠0 ocorre, a CPU <em>incondicionalmente</em> troca para aquele stack — mesmo que RSP
+            já esteja corrompido. Isso é essencial para exceções críticas que podem ocorrer com o stack
+            do kernel em estado inválido:
+        </p>
+        <p class="lang-en" style="display:none">
+            The IST (3-bit) field in the Gate Descriptor references one of 7 alternate stacks defined
+            in the <strong style="color:#fff">TSS</strong> (Task State Segment). When an exception with
+            IST≠0 occurs, the CPU <em>unconditionally</em> switches to that stack — even if RSP is
+            already corrupted. This is essential for critical exceptions that may occur with the kernel
+            stack in an invalid state:
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="uso típico do IST no Linux/kernel hobby" data-en="typical IST usage in Linux/hobby kernel">uso típico do IST no Linux/kernel hobby</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  TSS.IST1  →  #NMI  (Non-Maskable Interrupt)     — can interrupt ANY context
+  TSS.IST2  →  #DF   (Double Fault, vector 8)      — triggered when handler itself faults
+  TSS.IST3  →  #MC   (Machine Check, vector 18)    — hardware error, RSP might be invalid
+  TSS.IST4  →  #DB   (Debug, vector 1)             — single-step, JTAG
+
+  IST = 0   →  use the stack at TSS.RSP0 (kernel stack of current task)
+               — standard for all other interrupts and exceptions
+</pre>
+        </div>
+
+        <div class="callout warn">
+            <p><strong data-pt="O que acontece sem o IST para o Double Fault?" data-en="What happens without IST for Double Fault?">O que acontece sem IST para o Double Fault?</strong></p>
+            <p class="lang-pt">Se um handler de exceção (ex: #GP) falha — por exemplo, porque o stack
+            do kernel está corrompido e RSP aponta para memória inválida — o CPU tenta invocar o handler
+            de #DF. Sem IST, ele tentaria usar o mesmo stack corrompido para salvar o frame de #DF. Isso
+            gera uma terceira exceção enquanto tratando outra → <strong style="color:#fff">triple fault</strong>
+            → o processador reseta a máquina imediatamente, sem nenhum aviso. Com IST, o #DF sempre usa
+            um stack separado e garantidamente válido.</p>
+            <p class="lang-en" style="display:none">If an exception handler (e.g., #GP) faults — for
+            example because the kernel stack is corrupted and RSP points to invalid memory — the CPU
+            attempts to invoke the #DF handler. Without IST, it would try to use the same corrupted
+            stack to save the #DF frame. This triggers a third exception while handling another →
+            <strong style="color:#fff">triple fault</strong> → the processor immediately resets the
+            machine without any warning. With IST, #DF always uses a separate, guaranteed-valid stack.</p>
+        </div>
+    </section>
+
+    <!-- 03 — FLUXO ATÔMICO -->
+    <section class="post-section" id="fluxo">
+        <div class="section-label">03</div>
+        <h2 data-pt="O Fluxo Atômico: o que a CPU empurra na stack"
+            data-en="The Atomic Flow: what the CPU pushes onto the stack">
+            <span data-pt="O Fluxo Atômico" data-en="The Atomic Flow">O Fluxo Atômico</span>
+        </h2>
+
+        <p class="lang-pt">
+            No instante em que uma interrupção é reconhecida pela CPU, uma sequência precisa e atômica
+            de passos de hardware ocorre — sem software envolvido. Entender essa sequência é pré-requisito
+            para escrever qualquer ISR correta.
+        </p>
+        <p class="lang-en" style="display:none">
+            The instant an interrupt is acknowledged by the CPU, a precise and atomic sequence of hardware
+            steps occurs — no software involved. Understanding this sequence is a prerequisite for writing
+            any correct ISR.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="sequência de hardware ao receber interrupção (x86_64)" data-en="hardware sequence on interrupt reception (x86_64)">sequência de hardware ao receber interrupção (x86_64)</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  1. CPU finishes (or abandons) the current instruction.
+  2. Checks RFLAGS.IF for maskable IRQs (NMI ignores this).
+
+  <span class="cm">── IF PRIVILEGE CHANGE (user ring3 → kernel ring0) ────────────────────</span>
+  3a. Load new RSP from TSS.RSP0 (or TSS.IST[n] if IST ≠ 0)     ← stack switch!
+  3b. Switch to new SS (kernel data segment)
+  3c. On the NEW kernel stack, push:
+      ┌──────────────────────────┐  ← new RSP after all pushes
+      │  SS        (old, ring3)  │  +40  user stack segment
+      │  RSP       (old, ring3)  │  +32  user stack pointer
+      │  RFLAGS    (old)         │  +24  saved flags
+      │  CS        (old, ring3)  │  +16  user code segment
+      │  RIP       (old)         │  + 8  faulting / next instruction
+      │  Error Code (if any)     │  + 0  ← pushed ONLY by: #DF #TS #NP #SS #GP #PF #AC #CP
+      └──────────────────────────┘  ← RSP now
+
+  <span class="cm">── IF NO PRIVILEGE CHANGE (kernel → kernel, already ring0) ────────────</span>
+  3d. Use SAME stack. Push only:
+      ┌──────────────────────────┐
+      │  RFLAGS    (old)         │  +16   (SS and RSP are NOT saved)
+      │  CS        (old)         │  + 8
+      │  RIP       (old)         │  + 0
+      │  Error Code (if any)     │
+      └──────────────────────────┘
+
+  4. If Interrupt Gate: clear RFLAGS.IF  (disable further maskable IRQs)
+  5. Load CS and RIP from the Gate Descriptor (jump to ISR)
+  6. Software takes over (your ISR runs)
+</pre>
+        </div>
+
+        <h3>// <span data-pt="Quais exceções empurram error code?" data-en="Which exceptions push an error code?">Quais exceções empurram error code?</span></h3>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="vetores que empurram error code automaticamente" data-en="vectors that automatically push an error code">vetores que empurram error code automaticamente</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  Vector  Mnemonic  Name                       Error Code?
+  ──────  ────────  ─────────────────────────  ──────────
+    8       #DF     Double Fault               YES (always 0)
+   10       #TS     Invalid TSS                YES
+   11       #NP     Segment Not Present        YES
+   12       #SS     Stack-Segment Fault        YES
+   13       #GP     General Protection Fault   YES
+   14       #PF     Page Fault                 YES  (see previous post for bit layout)
+   17       #AC     Alignment Check            YES (always 0)
+   21       #CP     Control Protection Fault   YES
+
+  All others (0–7, 9, 15–16, 18–20, 22–31, 32–255): NO error code.
+  <span class="cm">; ISR stubs must handle this asymmetry — see Section 04.</span>
+</pre>
+        </div>
+
+        <div class="callout warn">
+            <p><strong data-pt="Segurança: interrupt nesting e stack overflow do kernel" data-en="Security: interrupt nesting and kernel stack overflow">Segurança: interrupt nesting e stack overflow do kernel</strong></p>
+            <p class="lang-pt">Cada frame de interrupção ocupa <strong style="color:#fff">40 bytes</strong>
+            no stack (sem error code, sem privilégio, kernel→kernel). O stack padrão do kernel no Linux
+            é <strong style="color:#fff">16 KB</strong>. Uma ISR mal escrita que:
+            (1) usa Trap Gate para IRQ periódica, (2) demora mais que o período do timer, e (3) não
+            reenvia EOI — pode acumular centenas de frames antes do stack overflow. O resultado é um
+            #DF silencioso que, sem IST configurado, produz um triple fault e reset da máquina.
+            O diagnóstico é quase impossível sem um debugger de kernel (KDB/KGDB) ou memória
+            de dump post-mortem.</p>
+            <p class="lang-en" style="display:none">Each interrupt frame occupies
+            <strong style="color:#fff">40 bytes</strong> on the stack (no error code, no privilege
+            change, kernel→kernel). The Linux default kernel stack is <strong style="color:#fff">16 KB</strong>.
+            A badly written ISR that: (1) uses a Trap Gate for a periodic IRQ, (2) runs longer than
+            the timer period, and (3) does not send EOI — can accumulate hundreds of frames before a
+            stack overflow. The result is a silent #DF which, without IST configured, produces a triple
+            fault and machine reset. The diagnosis is nearly impossible without a kernel debugger
+            (KDB/KGDB) or a post-mortem memory dump.</p>
+        </div>
+    </section>
+
+    <!-- 04 — ISR -->
+    <section class="post-section" id="isr">
+        <div class="section-label">04</div>
+        <h2 data-pt="Implementação da ISR: Assembly + C + IRETQ"
+            data-en="ISR Implementation: Assembly + C + IRETQ">
+            <span data-pt="Implementação da ISR" data-en="ISR Implementation">Implementação da ISR</span>: Assembly + C + <code>IRETQ</code>
+        </h2>
+
+        <p class="lang-pt">
+            O CPU salva apenas o frame mínimo (RIP, CS, RFLAGS, RSP, SS). O restante dos registradores
+            — <code>RAX</code> a <code>R15</code> — pode ter sido modificado pelo contexto interrompido
+            e <strong style="color:#fff">deve ser salvo pelo software</strong>. O padrão é um stub em
+            Assembly que: (1) normaliza o stack com um error code fictício para exceções que não o
+            empurram, (2) salva todos os registradores, (3) chama um handler em C, e (4) restaura tudo
+            antes de <code>IRETQ</code>.
+        </p>
+        <p class="lang-en" style="display:none">
+            The CPU saves only the minimum frame (RIP, CS, RFLAGS, RSP, SS). The remaining registers
+            — <code>RAX</code> through <code>R15</code> — may have been modified by the interrupted
+            context and <strong style="color:#fff">must be saved by software</strong>. The standard pattern
+            is an Assembly stub that: (1) normalizes the stack with a fake error code for exceptions that
+            don't push one, (2) saves all registers, (3) calls a C handler, and (4) restores everything
+            before <code>IRETQ</code>.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">isr_stubs.asm — NASM, 64-bit</span>
+                <span class="code-lang">nasm</span>
+            </div>
+<pre><span class="cm">; Macro: generate a stub for exceptions WITHOUT error code</span>
+<span class="cm">; We push a fake 0 to keep the stack layout uniform.</span>
+<span class="pp">%macro</span> ISR_NOERR 1
+<span class="op">global</span> <span class="fn">isr%1</span>
+<span class="fn">isr%1</span>:
+    <span class="kw">push</span>  <span class="kw">qword</span> <span class="num">0</span>          <span class="cm">; fake error code</span>
+    <span class="kw">push</span>  <span class="kw">qword</span> <span class="num">%1</span>         <span class="cm">; vector number</span>
+    <span class="kw">jmp</span>   <span class="fn">isr_common</span>
+<span class="pp">%endmacro</span>
+
+<span class="cm">; Macro: generate a stub for exceptions WITH error code</span>
+<span class="cm">; CPU already pushed it; we only push the vector number.</span>
+<span class="pp">%macro</span> ISR_ERR 1
+<span class="op">global</span> <span class="fn">isr%1</span>
+<span class="fn">isr%1</span>:
+    <span class="kw">push</span>  <span class="kw">qword</span> <span class="num">%1</span>         <span class="cm">; vector number (error code already on stack)</span>
+    <span class="kw">jmp</span>   <span class="fn">isr_common</span>
+<span class="pp">%endmacro</span>
+
+<span class="cm">; --- Generate all 256 stubs ---</span>
+ISR_NOERR  <span class="num">0</span>   <span class="cm">; #DE  Divide Error</span>
+ISR_NOERR  <span class="num">1</span>   <span class="cm">; #DB  Debug</span>
+ISR_NOERR  <span class="num">2</span>   <span class="cm">; NMI</span>
+ISR_NOERR  <span class="num">3</span>   <span class="cm">; #BP  Breakpoint</span>
+ISR_NOERR  <span class="num">6</span>   <span class="cm">; #UD  Invalid Opcode</span>
+ISR_ERR    <span class="num">8</span>   <span class="cm">; #DF  Double Fault     (error code = 0, always)</span>
+ISR_ERR   <span class="num">13</span>   <span class="cm">; #GP  General Protection</span>
+ISR_ERR   <span class="num">14</span>   <span class="cm">; #PF  Page Fault</span>
+ISR_NOERR <span class="num">32</span>   <span class="cm">; IRQ0 timer</span>
+ISR_NOERR <span class="num">33</span>   <span class="cm">; IRQ1 keyboard</span>
+<span class="cm">; ... (continue for all 256 vectors)</span>
+
+section .text
+
+<span class="fn">isr_common</span>:
+    <span class="cm">; At entry, stack (top to bottom):</span>
+    <span class="cm">;   [rsp+0]  = vector,      [rsp+8]  = error code (real or fake)</span>
+    <span class="cm">;   [rsp+16] = RIP,         [rsp+24] = CS</span>
+    <span class="cm">;   [rsp+32] = RFLAGS,      [rsp+40] = RSP (if ring3→ring0)</span>
+    <span class="cm">;   [rsp+48] = SS           (if ring3→ring0)</span>
+
+    <span class="cm">; Save all general-purpose registers (caller + callee saved)</span>
+    <span class="kw">push</span>  <span class="reg">rax</span>
+    <span class="kw">push</span>  <span class="reg">rbx</span>
+    <span class="kw">push</span>  <span class="reg">rcx</span>
+    <span class="kw">push</span>  <span class="reg">rdx</span>
+    <span class="kw">push</span>  <span class="reg">rsi</span>
+    <span class="kw">push</span>  <span class="reg">rdi</span>
+    <span class="kw">push</span>  <span class="reg">rbp</span>
+    <span class="kw">push</span>  <span class="reg">r8</span>
+    <span class="kw">push</span>  <span class="reg">r9</span>
+    <span class="kw">push</span>  <span class="reg">r10</span>
+    <span class="kw">push</span>  <span class="reg">r11</span>
+    <span class="kw">push</span>  <span class="reg">r12</span>
+    <span class="kw">push</span>  <span class="reg">r13</span>
+    <span class="kw">push</span>  <span class="reg">r14</span>
+    <span class="kw">push</span>  <span class="reg">r15</span>
+
+    <span class="kw">mov</span>   <span class="reg">rdi</span>, <span class="reg">rsp</span>          <span class="cm">; 1st arg: pointer to interrupt_frame (System V ABI)</span>
+    <span class="kw">call</span>  <span class="fn">isr_dispatch</span>     <span class="cm">; call C handler</span>
+
+    <span class="cm">; Restore all GP registers</span>
+    <span class="kw">pop</span>   <span class="reg">r15</span>
+    <span class="kw">pop</span>   <span class="reg">r14</span>
+    <span class="kw">pop</span>   <span class="reg">r13</span>
+    <span class="kw">pop</span>   <span class="reg">r12</span>
+    <span class="kw">pop</span>   <span class="reg">r11</span>
+    <span class="kw">pop</span>   <span class="reg">r10</span>
+    <span class="kw">pop</span>   <span class="reg">r9</span>
+    <span class="kw">pop</span>   <span class="reg">r8</span>
+    <span class="kw">pop</span>   <span class="reg">rbp</span>
+    <span class="kw">pop</span>   <span class="reg">rdi</span>
+    <span class="kw">pop</span>   <span class="reg">rsi</span>
+    <span class="kw">pop</span>   <span class="reg">rdx</span>
+    <span class="kw">pop</span>   <span class="reg">rcx</span>
+    <span class="kw">pop</span>   <span class="reg">rbx</span>
+    <span class="kw">pop</span>   <span class="reg">rax</span>
+
+    <span class="kw">add</span>   <span class="reg">rsp</span>, <span class="num">16</span>           <span class="cm">; discard vector number + error code</span>
+    <span class="kw">iretq</span>                   <span class="cm">; restore RIP, CS, RFLAGS, RSP, SS</span></pre>
+        </div>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">isr_dispatch.c — C handler with full context access</span>
+                <span class="code-lang">c</span>
+            </div>
+<pre><span class="pp">#include</span> <span class="str">&lt;stdint.h&gt;</span>
+
+<span class="cm">/* Matches the exact layout pushed by isr_common + CPU frame */</span>
+<span class="kw">typedef struct</span> {
+    <span class="cm">/* pushed by isr_common (in reverse push order) */</span>
+    <span class="tp">uint64_t</span> r15, r14, r13, r12, r11, r10, r9, r8;
+    <span class="tp">uint64_t</span> rbp, rdi, rsi, rdx, rcx, rbx, rax;
+    <span class="cm">/* pushed by ISR stub */</span>
+    <span class="tp">uint64_t</span> vector;
+    <span class="tp">uint64_t</span> error_code;     <span class="cm">/* real or fake (0) */</span>
+    <span class="cm">/* pushed by CPU hardware */</span>
+    <span class="tp">uint64_t</span> rip;
+    <span class="tp">uint64_t</span> cs;
+    <span class="tp">uint64_t</span> rflags;
+    <span class="tp">uint64_t</span> rsp;            <span class="cm">/* only valid if ring3 → ring0 */</span>
+    <span class="tp">uint64_t</span> ss;             <span class="cm">/* only valid if ring3 → ring0 */</span>
+} <span class="tp">interrupt_frame_t</span>;
+
+<span class="cm">/* Called from assembly stub — pointer to full saved context */</span>
+<span class="tp">void</span> <span class="fn">isr_dispatch</span>(<span class="tp">interrupt_frame_t</span> *f) {
+    <span class="kw">switch</span> (f->vector) {
+        <span class="kw">case</span>  <span class="num">3</span>: <span class="fn">handle_breakpoint</span>(f);         <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="num">13</span>: <span class="fn">handle_general_protection</span>(f);  <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="num">14</span>: <span class="fn">handle_page_fault</span>(f);          <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="num">32</span>: <span class="fn">handle_timer_irq</span>(f);           <span class="kw">break</span>;
+        <span class="kw">default</span>: <span class="fn">handle_unknown</span>(f);             <span class="kw">break</span>;
+    }
+}
+
+<span class="tp">void</span> <span class="fn">handle_page_fault</span>(<span class="tp">interrupt_frame_t</span> *f) {
+    <span class="tp">uint64_t</span> fault_addr;
+    <span class="kw">__asm__</span> <span class="kw">volatile</span>(<span class="str">"mov %%cr2, %0"</span> : <span class="str">"=r"</span>(fault_addr));
+    <span class="cm">/* error_code bits: P=0 not present, W=1 write, U=1 user mode */</span>
+    <span class="cm">/* dispatch to demand paging, CoW, or SIGSEGV as appropriate   */</span>
+    <span class="fn">paging_handle_fault</span>(fault_addr, f->error_code, f->cs & <span class="num">3</span>);
+    <span class="cm">/* no EOI needed for exceptions — only for hardware IRQs */</span>
+}</pre>
+        </div>
+
+        <div class="callout">
+            <p><strong><code>IRETQ</code> — <span data-pt="o oposto atômico do fluxo de entrada" data-en="the atomic reverse of the entry flow">o oposto atômico do fluxo de entrada</span></strong></p>
+            <p class="lang-pt"><code>IRETQ</code> executa atomicamente: lê RIP, CS, RFLAGS do stack;
+            se CS indica mudança de privilégio para ring 3, também restaura RSP e SS.
+            Restaura <code>RFLAGS.IF</code> a partir do valor salvo — por isso o handler não precisa
+            chamar <code>STI</code> explicitamente. Se o frame na stack estiver corrompido (wrong CS,
+            RSP inválido), <code>IRETQ</code> dispara um #GP → potencial triple fault. É o ponto mais
+            sensível de toda a ISR.</p>
+            <p class="lang-en" style="display:none"><code>IRETQ</code> executes atomically: reads RIP,
+            CS, RFLAGS from the stack; if CS indicates a privilege change back to ring 3, it also
+            restores RSP and SS. It restores <code>RFLAGS.IF</code> from the saved value — which is
+            why the handler does not need an explicit <code>STI</code>. If the frame on the stack is
+            corrupted (wrong CS, invalid RSP), <code>IRETQ</code> triggers a #GP → potential triple
+            fault. It is the single most sensitive point of the entire ISR.</p>
+        </div>
+    </section>
+
+    <!-- 05 — APIC -->
+    <section class="post-section" id="apic">
+        <div class="section-label">05</div>
+        <h2 data-pt="APIC, Prioridades e Top Half / Bottom Half"
+            data-en="APIC, Priorities and Top Half / Bottom Half">
+            APIC, <span data-pt="Prioridades e Top Half / Bottom Half" data-en="Priorities and Top Half / Bottom Half">Prioridades e Top Half / Bottom Half</span>
+        </h2>
+
+        <h3>// PIC 8259 vs APIC — <span data-pt="evolução do controlador de interrupções" data-en="evolution of the interrupt controller">evolução do controlador de interrupções</span></h3>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="PIC 8259 (legado) vs APIC moderno" data-en="PIC 8259 (legacy) vs modern APIC">PIC 8259 (legado) vs APIC moderno</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+                    <span class="op">PIC 8259 (legacy)</span>            <span class="op">APIC / xAPIC / x2APIC</span>
+  ──────────────────────────────────────────────────────────────────────────
+  IRQ lines         15 (8+8 cascaded)              240+ (I/O APIC: 24 lines)
+  CPU targeting     single CPU only                per-core (Local APIC per CPU)
+  Max CPUs          1                              xAPIC: 255  │ x2APIC: 4 billion
+  Access method     I/O ports 0x20/0xA0            xAPIC: MMIO at 0xFEE00000
+                                                   x2APIC: MSR-based (faster)
+  EOI               OUT 0x20, 0x20                 MOV [0xFEE000B0], 0   (xAPIC)
+  IPI support       No                             Yes (Inter-Processor Interrupts)
+  Priority control  Limited (IRQ mask)             Full (TPR, PPR, vector-based)
+  Status            Emulated in UEFI/firmware       Mandatory on all modern x86_64
+  ──────────────────────────────────────────────────────────────────────────
+
+  <span class="cm">; On modern systems: OS disables PIC (mask all IRQs), enables APIC.</span>
+  <span class="cm">; Linux sequence: disable_8259A() → enable_IO_APIC() → setup_local_APIC()</span>
+</pre>
+        </div>
+
+        <h3>// <span data-pt="Prioridades no APIC: TPR e a classe do vetor" data-en="APIC priorities: TPR and the vector class">Prioridades no APIC: TPR e a classe do vetor</span></h3>
+
+        <p class="lang-pt">
+            No APIC, a <strong style="color:#fff">prioridade de um vetor é definida pelos seus 4 bits
+            superiores</strong> (<code>priority class = vector[7:4]</code>). Vetores 0xF0–0xFF têm
+            prioridade 15 (máxima), 0x20–0x2F têm prioridade 2 (mínima usável). O
+            <strong style="color:#fff">TPR</strong> (Task Priority Register, <code>CR8</code> em x86_64)
+            define o limiar mínimo de prioridade que o Local APIC aceita: interrupções com prioridade
+            ≤ TPR são adiadas até que TPR seja reduzido.
+        </p>
+        <p class="lang-en" style="display:none">
+            In the APIC, the <strong style="color:#fff">priority of a vector is defined by its upper 4 bits</strong>
+            (<code>priority class = vector[7:4]</code>). Vectors 0xF0–0xFF have priority 15 (maximum),
+            0x20–0x2F have priority 2 (minimum usable). The <strong style="color:#fff">TPR</strong>
+            (Task Priority Register, <code>CR8</code> in x86_64) defines the minimum priority threshold
+            the Local APIC accepts: interrupts with priority ≤ TPR are deferred until TPR is lowered.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="estratégia de prioridade para kernel e embedded" data-en="priority strategy for kernel and embedded">estratégia de prioridade para kernel e embedded</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  Vector range    Priority class   Typical assignment
+  ────────────────────────────────────────────────────────────────
+  0x00–0x1F       0–1              CPU exceptions (non-configurable)
+  0x20–0x2F       2                Low-priority IRQs (disk, sound)
+  0x30–0x9F       3–9              General device IRQs (NIC, USB)
+  0xA0–0xCF       10–12            High-priority devices
+  0xD0–0xDF       13               Scheduler / IPI (Linux: RESCHEDULE_VECTOR)
+  0xE0–0xEF       14               TLB shootdown, call function IPIs
+  0xF0–0xFE       15               Thermal, error, NMI-like
+  0xFF            15               APIC spurious vector (must always be registered)
+
+  <span class="cm">; Embedded pattern (RTOS on x86): assign higher vectors to time-critical ISRs,</span>
+  <span class="cm">; set CR8 (TPR) to mask lower-priority IRQs inside critical sections.</span>
+  <span class="cm">; Equivalent to BASEPRI register on ARM Cortex-M.</span>
+</pre>
+        </div>
+
+        <h3>// Top Half / Bottom Half — <span data-pt="o modelo de ISR em dois estágios" data-en="the two-stage ISR model">o modelo de ISR em dois estágios</span></h3>
+
+        <p class="lang-pt">
+            Uma ISR que executa trabalho pesado com interrupções desabilitadas aumenta a
+            <em>interrupt latency</em> do sistema inteiro. A solução universal é dividir o trabalho:
+        </p>
+        <p class="lang-en" style="display:none">
+            An ISR that performs heavy work with interrupts disabled increases the <em>interrupt latency</em>
+            of the entire system. The universal solution is to split the work:
+        </p>
+
+        <div class="flow-compare">
+            <div class="flow-col">
+                <div class="flow-col-title new">// TOP HALF (ISR)</div>
+                <div class="flow-step ok"><div class="dot"></div><span data-pt="Executa com IF=0, latência mínima" data-en="Runs with IF=0, minimal latency">Executa com IF=0, latência mínima</span></div>
+                <div class="flow-step ok"><div class="dot"></div><span data-pt="Lê dados do dispositivo para buffer circular" data-en="Reads device data into ring buffer">Lê dados do dispositivo para buffer circular</span></div>
+                <div class="flow-step ok"><div class="dot"></div><span data-pt="Envia EOI ao APIC" data-en="Sends EOI to APIC">Envia EOI ao APIC</span></div>
+                <div class="flow-step ok"><div class="dot"></div><span data-pt="Agenda o Bottom Half (sinaliza flag/semáforo)" data-en="Schedules the Bottom Half (signals flag/semaphore)">Agenda o Bottom Half</span></div>
+                <div class="flow-step bad"><div class="dot"></div><span data-pt="Proibido: sleep, malloc, mutex, I/O" data-en="Forbidden: sleep, malloc, mutex, I/O">Proibido: sleep, malloc, mutex, I/O</span></div>
+            </div>
+            <div class="flow-col">
+                <div class="flow-col-title old">// BOTTOM HALF (deferred)</div>
+                <div class="flow-step dim"><div class="dot"></div><span data-pt="Executa em contexto preemptível (softirq/tasklet/workqueue)" data-en="Runs in preemptible context (softirq/tasklet/workqueue)">Executa em contexto preemptível</span></div>
+                <div class="flow-step dim"><div class="dot"></div><span data-pt="Processa dados do buffer, demux de pacotes, decodificação" data-en="Processes buffer data, packet demux, decoding">Processa dados do buffer (decodificação, demux)</span></div>
+                <div class="flow-step dim"><div class="dot"></div><span data-pt="Pode dormir, alocar memória, adquirir mutexes" data-en="Can sleep, allocate memory, acquire mutexes">Pode dormir, alocar memória, adquirir mutexes</span></div>
+                <div class="flow-step dim"><div class="dot"></div><span data-pt="Linux: softirqs, tasklets, workqueues | Windows: DPC | RTOS: task post" data-en="Linux: softirqs, tasklets, workqueues | Windows: DPC | RTOS: task post">Linux: softirq/tasklet/workqueue</span></div>
+                <div class="flow-step dim"><div class="dot"></div><span data-pt="Windows: DPC (Deferred Procedure Call) em DISPATCH_LEVEL" data-en="Windows: DPC (Deferred Procedure Call) at DISPATCH_LEVEL">Windows: DPC em DISPATCH_LEVEL</span></div>
+            </div>
+        </div>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="exemplo: ISR de timer seguindo o modelo Top/Bottom Half" data-en="example: timer ISR following the Top/Bottom Half model">exemplo: ISR de timer seguindo o modelo Top/Bottom Half</span>
+                <span class="code-lang">c</span>
+            </div>
+<pre><span class="cm">/* --- TOP HALF: runs inside ISR with interrupts disabled --- */</span>
+<span class="tp">void</span> <span class="fn">handle_timer_irq</span>(<span class="tp">interrupt_frame_t</span> *f) {
+    <span class="cm">/* 1. Read hardware counter (fast) */</span>
+    <span class="tp">uint64_t</span> ticks = <span class="fn">lapic_read_timer_count</span>();
+
+    <span class="cm">/* 2. Update kernel tick counter (atomic, no lock needed — IRQs off) */</span>
+    jiffies++;
+
+    <span class="cm">/* 3. Signal the scheduler to run (bottom half) */</span>
+    need_resched = <span class="num">1</span>;
+
+    <span class="cm">/* 4. Send EOI to Local APIC — BEFORE re-enabling interrupts */</span>
+    <span class="fn">lapic_write</span>(<span class="fn">LAPIC_EOI</span>, <span class="num">0</span>);
+
+    <span class="cm">/* Handler returns → IRETQ restores RFLAGS with IF=1 (for Interrupt Gate) */</span>
+}
+
+<span class="cm">/* --- BOTTOM HALF: runs in the scheduler context, preemptible --- */</span>
+<span class="tp">void</span> <span class="fn">scheduler_tick</span>(<span class="tp">void</span>) {        <span class="cm">/* called by the kernel main loop */</span>
+    <span class="kw">if</span> (!need_resched) <span class="kw">return</span>;
+    need_resched = <span class="num">0</span>;
+
+    <span class="cm">/* Heavy work: update process timeslices, select next task, etc. */</span>
+    <span class="fn">sched_update_timeslice</span>(<span class="fn">current_task</span>());
+    <span class="fn">sched_maybe_preempt</span>();     <span class="cm">/* may call schedule() and context-switch */</span>
+}</pre>
+        </div>
+
+        <div class="callout warn">
+            <p><strong data-pt="EOI antes ou depois de reabilitar interrupções?" data-en="EOI before or after re-enabling interrupts?">EOI: <span data-pt="antes ou depois de reabilitar interrupções?" data-en="before or after re-enabling interrupts?">antes ou depois de reabilitar interrupções?</span></strong></p>
+            <p class="lang-pt">O EOI deve ser enviado ao APIC <strong style="color:#fff">antes</strong>
+            de sair da ISR. Se enviado depois do <code>IRETQ</code> (já com IF=1), o hardware pode
+            reenviar a mesma interrupção antes que o EOI seja processado — causando um spurious
+            interrupt ou, pior, nesting acidental. A ordem correta é sempre: (1) fazer o trabalho
+            mínimo, (2) enviar EOI, (3) retornar via <code>IRETQ</code>. O APIC tem um registrador
+            de "In-Service" (ISR do APIC) que mantém a interrupção como ativa até o EOI — entregar
+            o EOI late pode causar deadlock na linha de prioridade.</p>
+            <p class="lang-en" style="display:none">The EOI must be sent to the APIC
+            <strong style="color:#fff">before</strong> exiting the ISR. If sent after <code>IRETQ</code>
+            (with IF=1 already), the hardware may re-fire the same interrupt before the EOI is
+            processed — causing a spurious interrupt or, worse, accidental nesting. The correct order
+            is always: (1) do minimum work, (2) send EOI, (3) return via <code>IRETQ</code>. The APIC
+            has an In-Service Register (APIC ISR) that keeps the interrupt marked as active until EOI
+            — late EOI delivery can deadlock the priority line.</p>
+        </div>
+    </section>
+
+    <div class="post-nav">
+        <a href="../posts.html">
+            <i class='bx bx-arrow-back'></i>
+            <span data-pt="Voltar aos posts" data-en="Back to posts">Voltar aos posts</span>
+        </a>
+        <a href="https://github.com/zahanzo" target="_blank">
+            <span data-pt="Ver no GitHub" data-en="View on GitHub">Ver no GitHub</span>
+            <i class='bx bx-link-external'></i>
+        </a>
+    </div>
+
+</article>
+</main>
+
+<footer>
+    <p>&copy; 2026 Robert Souza Lages.</p>
+</footer>
+
+<script>
+    let currentLang = localStorage.getItem('lang') || 'pt';
+
+    function setLang(lang) {
+        currentLang = lang;
+        localStorage.setItem('lang', lang);
+        document.querySelectorAll('[data-pt], [data-en]').forEach(el => {
+            const val = el.getAttribute('data-' + lang);
+            if (val !== null) el.textContent = val;
+        });
+        document.querySelectorAll('.lang-pt').forEach(el => el.style.display = lang === 'pt' ? '' : 'none');
+        document.querySelectorAll('.lang-en').forEach(el => el.style.display = lang === 'en' ? '' : 'none');
+        document.documentElement.lang = lang === 'pt' ? 'pt-BR' : 'en';
+        document.querySelectorAll('.lang-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.id === 'btn-' + lang);
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        document.body.addEventListener('click', (e) => {
+            const btn = e.target.closest('.lang-btn');
+            if (btn && btn.id) setLang(btn.id.replace('btn-', ''));
+        });
+        const hamburger = document.querySelector('.hamburger');
+        const navLinks  = document.querySelector('.nav-links');
+        if (hamburger) hamburger.addEventListener('click', () => navLinks.classList.toggle('active'));
+        setLang(currentLang);
+    });
+</script>
+
+</body>
+</html>

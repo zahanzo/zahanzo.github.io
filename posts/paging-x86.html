@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Virtual Memory & Paging em x86_64 | Robert Souza Lages</title>
+    <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+    <link rel="stylesheet" href="style.css">
+    <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
+</head>
+<body>
+
+<nav class="navbar">
+    <div class="logo"><span>0x</span>Robert<span>_</span></div>
+    <ul class="nav-links">
+        <li><a href="../index.html"    data-pt="Sobre"    data-en="About">Sobre</a></li>
+        <li><a href="../resume.html"   data-pt="Currículo" data-en="Resume">Currículo</a></li>
+        <li><a href="../projects.html" data-pt="Projetos"  data-en="Projects">Projetos</a></li>
+        <li><a href="../posts.html" class="active">Posts</a></li>
+    </ul>
+    <div class="navbar-right">
+        <div class="lang-toggle">
+            <button class="lang-btn active" id="btn-pt">PT</button>
+            <button class="lang-btn"        id="btn-en">EN</button>
+        </div>
+        <div class="hamburger"><i class='bx bx-menu'></i></div>
+    </div>
+</nav>
+
+<main>
+<article class="post-wrapper">
+
+    <header class="post-header">
+        <div class="post-breadcrumb">
+            <a href="../posts.html">posts</a><span>/</span><span>paging-x86</span>
+        </div>
+        <div class="post-meta">
+            <span class="post-tag">KERNEL</span>
+            <span class="post-tag">ARCHITECTURE</span>
+            <span class="post-tag">LOW-LEVEL</span>
+            <time class="post-date" datetime="2026-05-25">2026-05-25</time>
+        </div>
+        <h1 class="post-title">
+            <span data-pt="Virtual Memory & Paging:" data-en="Virtual Memory & Paging:">Virtual Memory & Paging:</span><br>
+            <span data-pt="Como o CPU Monta a Ilusão" data-en="How the CPU Builds the Illusion">Como o CPU Monta a Ilusão</span>
+        </h1>
+        <p class="post-summary lang-pt">
+            Do registro <code>CR3</code> ao acesso físico à RAM — uma análise da hierarquia de tradução
+            de endereços em x86_64: tabelas PML4/PDPT/PD/PT, o papel da MMU e da TLB, manipulação de
+            bits de permissão em PTEs, Page Faults e as implicações de segurança e performance que
+            qualquer engenheiro de sistemas precisa dominar.
+        </p>
+        <p class="post-summary lang-en" style="display:none">
+            From the <code>CR3</code> register to physical RAM access — a deep-dive into x86_64 address
+            translation: PML4/PDPT/PD/PT table hierarchy, the role of the MMU and TLB, PTE permission
+            bit manipulation, Page Faults, and the security and performance implications every systems
+            engineer needs to master.
+        </p>
+
+        <div class="toc lang-pt">
+            <div class="toc-title">// ÍNDICE</div>
+            <ol>
+                <li><a href="#problema">O Problema: por que não mapear memória física diretamente?</a></li>
+                <li><a href="#hierarquia">Anatomia: a hierarquia de 4 níveis (CR3 → PML4 → PT)</a></li>
+                <li><a href="#mmu-tlb">MMU & TLB: o hardware que executa a tradução</a></li>
+                <li><a href="#pratico">Prática: Page Fault e manipulação de PTEs</a></li>
+                <li><a href="#perf-sec">Performance, Segurança e Sistemas Embarcados</a></li>
+            </ol>
+        </div>
+        <div class="toc lang-en" style="display:none">
+            <div class="toc-title">// TABLE OF CONTENTS</div>
+            <ol>
+                <li><a href="#problema">The Problem: why not map physical memory directly?</a></li>
+                <li><a href="#hierarquia">Anatomy: the 4-level hierarchy (CR3 → PML4 → PT)</a></li>
+                <li><a href="#mmu-tlb">MMU & TLB: the hardware that executes translation</a></li>
+                <li><a href="#pratico">Practice: Page Fault and PTE manipulation</a></li>
+                <li><a href="#perf-sec">Performance, Security and Embedded Systems</a></li>
+            </ol>
+        </div>
+    </header>
+
+    <!-- 01 — O PROBLEMA -->
+    <section class="post-section" id="problema">
+        <div class="section-label">01</div>
+        <h2 data-pt="O Problema: por que não mapear memória física diretamente?"
+            data-en="The Problem: why not map physical memory directly?">
+            <span data-pt="O Problema: por que não mapear memória física diretamente?"
+                  data-en="The Problem: why not map physical memory directly?">O Problema: por que não mapear memória física diretamente?</span>
+        </h2>
+
+        <p class="lang-pt">
+            Em sistemas sem abstração de memória — como microcontroladores sem MMU — cada processo acessa
+            diretamente o barramento físico. Funciona para uma única tarefa. Mas tente rodar dois processos
+            simultaneamente: o processo A pode ler ou sobrescrever arbitrariamente a memória do processo B.
+            Não existe nenhum mecanismo de hardware que impeça isso. É um modelo fundamentalmente não
+            seguro e não escalável.
+        </p>
+        <p class="lang-en" style="display:none">
+            On systems without memory abstraction — such as MMU-less microcontrollers — every process
+            directly accesses the physical bus. This works fine for a single task. But try running two
+            processes simultaneously: process A can freely read or overwrite process B's memory. There
+            is no hardware mechanism to prevent this. It is a fundamentally insecure and non-scalable model.
+        </p>
+
+        <h3>// <span data-pt="Os quatro problemas que a memória virtual resolve" data-en="The four problems virtual memory solves">Os quatro problemas que a memória virtual resolve</span></h3>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="mapeamento direto vs. memória virtual" data-en="direct mapping vs. virtual memory">mapeamento direto vs. memória virtual</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  <span class="cm">; WITHOUT virtual memory (bare metal / no MMU)</span>
+  Process A addr 0x1000  ──→  Physical RAM 0x1000   ← process B can read this
+  Process B addr 0x1000  ──→  Physical RAM 0x1000   ← COLLISION — same address!
+
+  <span class="cm">; WITH virtual memory (paging enabled)</span>
+  Process A  vaddr 0x1000  ──→  MMU  ──→  Physical frame 0x4A000  ┐
+  Process B  vaddr 0x1000  ──→  MMU  ──→  Physical frame 0xB7000  ┘ isolated
+  Kernel     vaddr 0x1000  ──→  MMU  ──→  Physical frame 0x0001000 ← only kernel maps this
+</pre>
+        </div>
+
+        <div class="flow-compare">
+            <div class="flow-col">
+                <div class="flow-col-title old">// <span data-pt="SEM MEMÓRIA VIRTUAL" data-en="WITHOUT VIRTUAL MEMORY">SEM MEMÓRIA VIRTUAL</span></div>
+                <div class="flow-step bad"><div class="dot"></div><span data-pt="Processo A pode ler RAM de B" data-en="Process A can read B's RAM">Processo A pode ler RAM de B</span></div>
+                <div class="flow-step bad"><div class="dot"></div><span data-pt="Fragmentação física torna malloc impossível em escala" data-en="Physical fragmentation makes large malloc impossible">Fragmentação física torna malloc impossível em escala</span></div>
+                <div class="flow-step bad"><div class="dot"></div><span data-pt="Cada processo precisa saber seu endereço físico real" data-en="Each process must know its actual physical address">Cada processo precisa saber seu endereço físico real</span></div>
+                <div class="flow-step bad"><div class="dot"></div><span data-pt="Código não pode ser relocável" data-en="Code cannot be relocatable">Código não pode ser relocável</span></div>
+            </div>
+            <div class="flow-col">
+                <div class="flow-col-title new">// <span data-pt="COM MEMÓRIA VIRTUAL (PAGING)" data-en="WITH VIRTUAL MEMORY (PAGING)">COM MEMÓRIA VIRTUAL (PAGING)</span></div>
+                <div class="flow-step ok"><div class="dot"></div><span data-pt="Isolamento total entre processos" data-en="Full process isolation">Isolamento total entre processos</span></div>
+                <div class="flow-step ok"><div class="dot"></div><span data-pt="Páginas físicas dispersas, espaço virtual contíguo" data-en="Scattered physical pages, contiguous virtual space">Páginas físicas dispersas, espaço virtual contíguo</span></div>
+                <div class="flow-step ok"><div class="dot"></div><span data-pt="Todo processo enxerga o mesmo espaço linear (0→2⁴⁸)" data-en="Every process sees the same linear space (0→2⁴⁸)">Todo processo enxerga o mesmo espaço linear (0→2⁴⁸)</span></div>
+                <div class="flow-step ok"><div class="dot"></div><span data-pt="Permissões por página (R/W/X/U)" data-en="Per-page permissions (R/W/X/U)">Permissões por página (R/W/X/U)</span></div>
+            </div>
+        </div>
+
+        <p class="lang-pt">
+            A unidade fundamental de gestão é a <strong style="color:#fff">página</strong> — em x86_64, o
+            tamanho padrão é <strong style="color:#fff">4 KB</strong> (2¹²). O hardware suporta também
+            <em>huge pages</em> de 2 MB (PDE com bit PS=1) e 1 GB (PDPTE com PS=1), úteis para reduzir
+            pressão na TLB em workloads que manipulam regiões contíguas grandes.
+        </p>
+        <p class="lang-en" style="display:none">
+            The fundamental unit of management is the <strong style="color:#fff">page</strong> — in x86_64,
+            the standard size is <strong style="color:#fff">4 KB</strong> (2¹²). The hardware also supports
+            <em>huge pages</em> of 2 MB (PDE with PS bit=1) and 1 GB (PDPTE with PS=1), useful for reducing
+            TLB pressure in workloads that operate on large contiguous regions.
+        </p>
+    </section>
+
+    <!-- 02 — HIERARQUIA -->
+    <section class="post-section" id="hierarquia">
+        <div class="section-label">02</div>
+        <h2 data-pt="Anatomia: a hierarquia de tradução de 4 níveis"
+            data-en="Anatomy: the 4-level translation hierarchy">
+            <span data-pt="Anatomia: a hierarquia de tradução de 4 níveis"
+                  data-en="Anatomy: the 4-level translation hierarchy">Anatomia: a hierarquia de tradução de 4 níveis</span>
+        </h2>
+
+        <p class="lang-pt">
+            Um endereço virtual em x86_64 tem 64 bits, mas apenas os 48 bits inferiores são utilizados
+            no modo de paginação padrão (4 níveis). Os bits 63–48 devem ser cópias do bit 47 —
+            o chamado <em>canonical form requirement</em>. Com 5 níveis (PML5, ativado com
+            <code>CR4.LA57=1</code>), o espaço expande para 57 bits. Os 48 bits úteis são divididos
+            em cinco campos pelo hardware:
+        </p>
+        <p class="lang-en" style="display:none">
+            A virtual address in x86_64 has 64 bits, but only the lower 48 bits are used in standard
+            paging mode (4 levels). Bits 63–48 must be copies of bit 47 — the so-called
+            <em>canonical form requirement</em>. With 5 levels (PML5, enabled with <code>CR4.LA57=1</code>),
+            the space expands to 57 bits. The useful 48 bits are divided into five fields by hardware:
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="decomposição de um endereço virtual de 48 bits" data-en="48-bit virtual address decomposition">decomposição de um endereço virtual de 48 bits</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  63        48 47      39 38      30 29      21 20      12 11         0
+  ┌──────────┬──────────┬──────────┬──────────┬──────────┬────────────┐
+  │ sign ext │  PML4    │  PDPT    │    PD    │    PT    │   Offset   │
+  │ (16 bit) │  index   │  index   │  index   │  index   │  (12 bit)  │
+  │  (copy   │  (9 bit) │  (9 bit) │  (9 bit) │  (9 bit) │  4KB page  │
+  │  of b47) │  0..511  │  0..511  │  0..511  │  0..511  │            │
+  └──────────┴──────────┴──────────┴──────────┴──────────┴────────────┘
+        ↑           ↑          ↑          ↑          ↑
+    canonical   indexes    indexes    indexes    indexes
+    extension   PML4 tbl   PDPT tbl   PD table   PT table
+                (512 GiB   (1 GiB     (2 MiB     (4 KiB
+                 per entry)  per entry)  per entry)  per entry)
+</pre>
+        </div>
+
+        <h3>// CR3 — <span data-pt="o registrador raiz" data-en="the root register">o registrador raiz</span></h3>
+        <p class="lang-pt">
+            O registro de controle <code>CR3</code> (também chamado <em>Page Directory Base Register</em>)
+            contém o <strong style="color:#fff">endereço físico da tabela PML4 do processo atual</strong>.
+            Quando o sistema operacional realiza um context switch, ele escreve o endereço físico da PML4
+            do novo processo em <code>CR3</code>. Isso automaticamente invalida toda a TLB (salvo em
+            processadores com PCID habilitado) e inicia o espaço de endereçamento virtual do novo contexto.
+        </p>
+        <p class="lang-en" style="display:none">
+            The control register <code>CR3</code> (also called the <em>Page Directory Base Register</em>)
+            holds the <strong style="color:#fff">physical address of the current process's PML4 table</strong>.
+            When the OS performs a context switch, it writes the physical address of the new process's PML4
+            into <code>CR3</code>. This automatically invalidates the entire TLB (except on processors with
+            PCID enabled) and begins the new context's virtual address space.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="page walk completo: CR3 → frame físico" data-en="full page walk: CR3 → physical frame">page walk completo: CR3 → frame físico</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  CR3 ──→ [ PML4 Table (4 KB, 512 entries × 8 bytes) ]
+              │
+              │  pml4[vaddr[47:39]]  →  PDPT physical base address
+              ↓
+          [ PDPT Table (4 KB, 512 entries) ]
+              │
+              │  pdpt[vaddr[38:30]]  →  PD physical base address
+              │                        (or 1 GB huge page if PS=1)
+              ↓
+          [ PD Table (4 KB, 512 entries) ]
+              │
+              │  pd[vaddr[29:21]]    →  PT physical base address
+              │                        (or 2 MB huge page if PS=1)
+              ↓
+          [ PT Table (4 KB, 512 entries) ]
+              │
+              │  pt[vaddr[20:12]]    →  physical page frame address
+              ↓
+          [ Physical Frame (4 KB) ]
+              │
+              │  + vaddr[11:0]  (byte offset within the page)
+              ↓
+          Physical Address ← final memory location
+</pre>
+        </div>
+
+        <h3>// <span data-pt="Estrutura de uma entrada de tabela de páginas (PTE)" data-en="Page Table Entry (PTE) structure">Estrutura de uma entrada de tabela de páginas (PTE)</span></h3>
+
+        <p class="lang-pt">
+            Cada entrada nas tabelas PML4, PDPT, PD e PT é um inteiro de 64 bits. Os bits têm papéis
+            específicos — alguns são interpretados pelo hardware (MMU), outros são reservados para uso
+            do sistema operacional:
+        </p>
+        <p class="lang-en" style="display:none">
+            Each entry in the PML4, PDPT, PD, and PT tables is a 64-bit integer. The bits have specific
+            roles — some are interpreted by hardware (MMU), others are reserved for OS use:
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="bits de uma PTE de 64 bits (x86_64)" data-en="64-bit PTE bit fields (x86_64)">bits de uma PTE de 64 bits (x86_64)</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  63  62..52  51..12         11..9    8    7    6    5    4    3    2    1    0
+  ┌──┬───────┬──────────────┬──────┬────┬────┬────┬────┬────┬────┬────┬────┬──┐
+  │XD│ avail │  phys addr   │ avail│ G  │ PS │ D  │ A  │PCD │PWT │ U/S│ R/W│ P│
+  └──┴───────┴──────────────┴──────┴────┴────┴────┴────┴────┴────┴────┴────┴──┘
+   │                │                 │    │    │    │                   │    │
+   │                │                 │    │    │    │                   │    └── P:   Present (1 = page is in RAM)
+   │                │                 │    │    │    │                   └─────── R/W: 0=read-only  1=writable
+   │                │                 │    │    │    └─────────────────────────── A:   Accessed (set by MMU on read)
+   │                │                 │    │    └──────────────────────────────── D:   Dirty    (set by MMU on write)
+   │                │                 │    └───────────────────────────────────── PS:  Page Size (1 = huge page)
+   │                │                 └────────────────────────────────────────── G:   Global  (do NOT flush from TLB on CR3 write)
+   │                └──────────────────────────────────────────────────────────── physical frame address (bits 51..12)
+   └─────────────────────────────────────────────────────────────────────────────── XD:  Execute Disable (NX bit, bit 63)
+</pre>
+        </div>
+
+        <div class="callout">
+            <p><strong data-pt="Bit U/S — a fronteira Kernel/Usuário" data-en="U/S bit — the Kernel/User boundary">Bit U/S — <span data-pt="a fronteira Kernel/Usuário" data-en="the Kernel/User boundary">a fronteira Kernel/Usuário</span></strong></p>
+            <p class="lang-pt">Quando <code>U/S = 0</code>, a página só é acessível no ring 0 (kernel).
+            Código de usuário (ring 3) que tenta acessar essa página gera um #PF imediatamente. É esse
+            bit que impede que um processo user-space leia diretamente a memória do kernel — o mecanismo
+            fundamental que o Meltdown (CVE-2017-5754) quebrou através de execução especulativa fora de
+            ordem, antes que o #PF fosse levantado.</p>
+            <p class="lang-en" style="display:none">When <code>U/S = 0</code>, the page is only accessible
+            in ring 0 (kernel). User-space code (ring 3) attempting to access that page immediately triggers
+            a #PF. This is the bit that prevents user-space processes from directly reading kernel memory —
+            the fundamental mechanism that Meltdown (CVE-2017-5754) broke through out-of-order speculative
+            execution, before the #PF was actually raised.</p>
+        </div>
+    </section>
+
+    <!-- 03 — MMU & TLB -->
+    <section class="post-section" id="mmu-tlb">
+        <div class="section-label">03</div>
+        <h2 data-pt="MMU & TLB: o hardware que executa a tradução"
+            data-en="MMU & TLB: the hardware that executes translation">
+            MMU & TLB: <span data-pt="o hardware que executa a tradução" data-en="the hardware that executes translation">o hardware que executa a tradução</span>
+        </h2>
+
+        <p class="lang-pt">
+            A <strong style="color:#fff">MMU</strong> (Memory Management Unit) é a unidade de hardware
+            integrada ao CPU responsável por interceptar todo acesso de memória e realizar a tradução
+            virtual→físico. Ela não é um componente separado em processadores modernos — está embutida
+            no pipeline, entre o cache L1 e o barramento de memória.
+        </p>
+        <p class="lang-en" style="display:none">
+            The <strong style="color:#fff">MMU</strong> (Memory Management Unit) is the hardware unit
+            integrated into the CPU responsible for intercepting every memory access and performing
+            virtual→physical translation. It is not a separate component in modern processors — it is
+            embedded in the pipeline, between the L1 cache and the memory bus.
+        </p>
+
+        <h3>// TLB — <span data-pt="Translation Lookaside Buffer" data-en="Translation Lookaside Buffer">Translation Lookaside Buffer</span></h3>
+
+        <p class="lang-pt">
+            Realizar um page walk completo a cada acesso de memória implicaria em 4 leituras adicionais
+            de RAM (uma por nível de tabela). Para um acesso que já leva ~100 ciclos por cache miss, isso
+            seria catastrófico. A solução é a <strong style="color:#fff">TLB</strong> — um cache de
+            hardware dentro da MMU que armazena traduções recentes (<code>vaddr</code> → <code>paddr</code>
+            + bits de permissão).
+        </p>
+        <p class="lang-en" style="display:none">
+            Performing a full page walk on every memory access would require 4 additional RAM reads (one
+            per table level). For an access that already costs ~100 cycles per cache miss, this would be
+            catastrophic. The solution is the <strong style="color:#fff">TLB</strong> — a hardware cache
+            inside the MMU that stores recent translations (<code>vaddr</code> → <code>paddr</code>
+            + permission bits).
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="fluxo completo: TLB hit vs TLB miss" data-en="full flow: TLB hit vs TLB miss">fluxo completo: TLB hit vs TLB miss</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  CPU issues  MOV RAX, [vaddr]
+       │
+       ↓
+  ┌─────────────────────────────────┐
+  │           TLB lookup            │
+  │  key: vaddr[47:12] (page number)│
+  └─────────────┬───────────────────┘
+                │
+       ┌────────┴─────────┐
+       │  HIT (~1 cycle)  │   MISS (~50–200 cycles)
+       ↓                  ↓
+  paddr known        Hardware Page Walker starts
+  check perms        reading physical RAM:
+  access L1 cache    1. CR3   → PML4 base  (RAM read)
+                     2. PML4  → PDPT base  (RAM read)
+                     3. PDPT  → PD base    (RAM read)
+                     4. PD    → PT base    (RAM read)
+                     5. PT    → paddr      (RAM read)
+                     └→ load into TLB, retry access
+                         (each step may be an L1/L2/L3 miss
+                          → worst case: 5 × ~100 cycles)
+</pre>
+        </div>
+
+        <h3>// <span data-pt="Estrutura e invalidação da TLB" data-en="TLB structure and invalidation">Estrutura e invalidação da TLB</span></h3>
+
+        <p class="lang-pt">
+            Em CPUs Intel modernas, a TLB é dividida em iTLB (instruções) e dTLB (dados) no L1,
+            e uma STLB compartilhada no L2. Um típico Core i7 tem ~64 entradas na L1 dTLB e
+            ~1.536 entradas na STLB. Quando o OS modifica uma PTE, ele deve explicitamente invalidar
+            a entrada correspondente na TLB — senão o hardware continuaria usando a tradução antiga
+            (stale entry), um bug grave e silencioso.
+        </p>
+        <p class="lang-en" style="display:none">
+            On modern Intel CPUs, the TLB is split into iTLB (instructions) and dTLB (data) at L1,
+            and a shared STLB at L2. A typical Core i7 has ~64 L1 dTLB entries and ~1,536 STLB
+            entries. When the OS modifies a PTE, it must explicitly invalidate the corresponding TLB
+            entry — otherwise the hardware would keep using the old (stale) translation, a serious
+            and silent bug.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="invalidação de TLB no kernel" data-en="TLB invalidation in the kernel">invalidação de TLB no kernel</span>
+                <span class="code-lang">asm</span>
+            </div>
+<pre><span class="cm">; Flush a single page from TLB (cheapest option)</span>
+<span class="kw">invlpg</span>  [<span class="reg">rdi</span>]           <span class="cm">; rdi = virtual address of the page</span>
+
+<span class="cm">; Flush entire TLB (write any value to CR3)</span>
+<span class="kw">mov</span>     <span class="reg">rax</span>, <span class="reg">cr3</span>
+<span class="kw">mov</span>     <span class="reg">cr3</span>, <span class="reg">rax</span>         <span class="cm">; same value = full TLB flush, very expensive</span>
+
+<span class="cm">; With PCID (Process Context Identifiers, CR4.PCIDE=1):</span>
+<span class="cm">; bit 63 of the value written to CR3 = NOFLUSH flag</span>
+<span class="cm">; allows keeping TLB entries tagged per-process across context switches</span>
+<span class="cm">; critical optimization for systems with many processes (Linux, Windows)</span></pre>
+        </div>
+
+        <div class="callout warn">
+            <p><strong data-pt="TLB Shootdown em sistemas multi-core" data-en="TLB Shootdown on multi-core systems">TLB Shootdown <span data-pt="em sistemas multi-core" data-en="on multi-core systems">em sistemas multi-core</span></strong></p>
+            <p class="lang-pt">Em um sistema com N núcleos, cada núcleo tem sua própria TLB. Quando o
+            kernel modifica um mapeamento compartilhado (ex: liberar uma página de memória compartilhada),
+            ele precisa garantir que <strong style="color:#fff">todas</strong> as TLBs de todos os núcleos
+            invalide aquela entrada. O mecanismo é uma <em>IPI (Inter-Processor Interrupt)</em> enviada
+            para cada núcleo — que interrompe a execução, executa <code>invlpg</code>, e confirma. Esse
+            processo, chamado <em>TLB shootdown</em>, é um dos mais custosos no kernel Linux e visível
+            em profiling como <code>flush_tlb_others</code>.</p>
+            <p class="lang-en" style="display:none">On a system with N cores, each core has its own TLB.
+            When the kernel modifies a shared mapping (e.g., freeing a shared memory page), it must ensure
+            that <strong style="color:#fff">every</strong> core's TLB invalidates that entry. The mechanism
+            is an <em>IPI (Inter-Processor Interrupt)</em> sent to each core — which halts execution, runs
+            <code>invlpg</code>, and acknowledges. This process, called a <em>TLB shootdown</em>, is one
+            of the most expensive operations in the Linux kernel and appears in profiling as
+            <code>flush_tlb_others</code>.</p>
+        </div>
+    </section>
+
+    <!-- 04 — PRÁTICO -->
+    <section class="post-section" id="pratico">
+        <div class="section-label">04</div>
+        <h2 data-pt="Prática: Page Fault e Manipulação de PTEs"
+            data-en="Practice: Page Fault and PTE Manipulation">
+            <span data-pt="Prática: Page Fault e Manipulação de PTEs"
+                  data-en="Practice: Page Fault and PTE Manipulation">Prática: Page Fault e Manipulação de PTEs</span>
+        </h2>
+
+        <h3>// <span data-pt="O fluxo de um Page Fault (#PF)" data-en="The Page Fault (#PF) flow">O fluxo de um Page Fault (#PF)</span></h3>
+
+        <p class="lang-pt">
+            O <code>#PF</code> é a exceção de hardware número 14. Ela é gerada pela MMU sempre que uma
+            tradução falha. Ao ocorrer, o processador empurra na stack (do kernel) um <em>error code</em>
+            de 32 bits e coloca o endereço virtual que causou a falha em <code>CR2</code>. O handler do
+            kernel interpreta esse código para decidir o que fazer.
+        </p>
+        <p class="lang-en" style="display:none">
+            <code>#PF</code> is hardware exception number 14. It is raised by the MMU whenever a
+            translation fails. When it occurs, the processor pushes a 32-bit <em>error code</em> onto the
+            (kernel) stack and places the faulting virtual address in <code>CR2</code>. The kernel handler
+            interprets this code to decide what to do.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="error code do #PF e decisão do kernel" data-en="#PF error code and kernel decision tree">error code do #PF e decisão do kernel</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  #PF Error Code (32 bits, pushed to stack by CPU):
+
+  31                5    4    3    2    1    0
+  ┌────────────────┬────┬────┬────┬────┬────┐
+  │   (reserved)   │ PK │ I/D│RSVD│ W/R│  P │
+  └────────────────┴────┴────┴────┴────┴────┘
+                         │    │    │    │    │
+                         │    │    │    │    └── P:    0 = page not present  ← demand paging / swap
+                         │    │    │    └─────── W/R:  0 = fault on read
+                         │    │    │             1 = fault on write      ← CoW (Copy-on-Write)
+                         │    │    └──────────── U/S:  1 = fault from user mode ← segfault candidate
+                         │    └───────────────── I/D:  1 = fault on instruction fetch ← NX violation
+                         └────────────────────── PK:   protection key violation (MPK)
+
+  Kernel handler logic (simplified):
+  ┌──────────────────────────────────────────────────────┐
+  │ P=0 → page not present                               │
+  │   → demand paging: allocate frame, update PTE, return│  ← most common (first access to mmap'd page)
+  │ P=1, W=1, CoW page → copy frame, mark writable       │  ← fork() optimization
+  │ P=1, U=1, no VMA   → SIGSEGV (segmentation fault)   │  ← user tried invalid addr
+  │ P=1, I/D=1         → SIGSEGV (NX violation)          │  ← execution of non-exec page
+  │ P=1, kernel addr   → kernel oops / panic             │  ← kernel bug
+  └──────────────────────────────────────────────────────┘
+</pre>
+        </div>
+
+        <h3>// <span data-pt="Manipulando bits de permissão em PTEs" data-en="Manipulating permission bits in PTEs">Manipulando bits de permissão em PTEs</span></h3>
+
+        <p class="lang-pt">
+            O código abaixo demonstra como um kernel ou hypervisor percorre as tabelas de página para
+            localizar uma PTE e manipular seus bits de proteção — por exemplo, para marcar uma página
+            como somente-leitura ou não-executável. Usa a convenção do Linux de mapear toda a RAM física
+            no espaço de kernel via <em>HHDM (Higher-Half Direct Map)</em>.
+        </p>
+        <p class="lang-en" style="display:none">
+            The code below demonstrates how a kernel or hypervisor walks page tables to locate a PTE
+            and manipulate its protection bits — for example, to mark a page as read-only or
+            non-executable. It uses the Linux convention of mapping all physical RAM into kernel space
+            via the <em>HHDM (Higher-Half Direct Map)</em>.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">pte_ops.c — kernel/hypervisor style PTE manipulation</span>
+                <span class="code-lang">c</span>
+            </div>
+<pre><span class="pp">#include</span> <span class="str">&lt;stdint.h&gt;</span>
+
+<span class="cm">/* PTE bit definitions */</span>
+<span class="pp">#define</span> <span class="fn">PTE_PRESENT</span>   (<span class="num">1ULL</span> &lt;&lt; <span class="num">0</span>)   <span class="cm">/* page is in RAM              */</span>
+<span class="pp">#define</span> <span class="fn">PTE_WRITABLE</span>  (<span class="num">1ULL</span> &lt;&lt; <span class="num">1</span>)   <span class="cm">/* 0 = read-only               */</span>
+<span class="pp">#define</span> <span class="fn">PTE_USER</span>      (<span class="num">1ULL</span> &lt;&lt; <span class="num">2</span>)   <span class="cm">/* 1 = user-accessible         */</span>
+<span class="pp">#define</span> <span class="fn">PTE_NX</span>        (<span class="num">1ULL</span> &lt;&lt; <span class="num">63</span>)  <span class="cm">/* execute disable             */</span>
+<span class="pp">#define</span> <span class="fn">PTE_ADDR_MASK</span> <span class="num">0x000FFFFFFFFFF000ULL</span>
+<span class="pp">#define</span> <span class="fn">HHDM_OFFSET</span>   <span class="num">0xFFFF800000000000ULL</span> <span class="cm">/* kernel's physical map base  */</span>
+
+<span class="kw">typedef</span> <span class="tp">uint64_t</span> <span class="tp">pte_t</span>;
+
+<span class="cm">/* Convert a physical address to a kernel-accessible virtual address */</span>
+<span class="kw">static</span> <span class="kw">inline</span> <span class="tp">pte_t</span>* <span class="fn">phys_to_virt</span>(<span class="tp">uint64_t</span> paddr) {
+    <span class="kw">return</span> (<span class="tp">pte_t</span>*)(paddr + <span class="fn">HHDM_OFFSET</span>);
+}
+
+<span class="cm">/* Walk page tables and return a pointer to the PTE for vaddr.
+ * cr3_phys: value read from CR3 (physical address of PML4).
+ * Returns NULL if any level is not present. */</span>
+<span class="tp">pte_t</span>* <span class="fn">walk_to_pte</span>(<span class="tp">uint64_t</span> cr3_phys, <span class="tp">uint64_t</span> vaddr) {
+    <span class="tp">pte_t</span> *pml4 = <span class="fn">phys_to_virt</span>(cr3_phys &amp; <span class="fn">PTE_ADDR_MASK</span>);
+    <span class="tp">pte_t</span>  e4   = pml4[(vaddr &gt;&gt; <span class="num">39</span>) &amp; <span class="num">0x1FF</span>];
+    <span class="kw">if</span> (!(e4 &amp; <span class="fn">PTE_PRESENT</span>)) <span class="kw">return</span> <span class="num">0</span>;
+
+    <span class="tp">pte_t</span> *pdpt = <span class="fn">phys_to_virt</span>(e4 &amp; <span class="fn">PTE_ADDR_MASK</span>);
+    <span class="tp">pte_t</span>  e3   = pdpt[(vaddr &gt;&gt; <span class="num">30</span>) &amp; <span class="num">0x1FF</span>];
+    <span class="kw">if</span> (!(e3 &amp; <span class="fn">PTE_PRESENT</span>)) <span class="kw">return</span> <span class="num">0</span>;
+
+    <span class="tp">pte_t</span> *pd   = <span class="fn">phys_to_virt</span>(e3 &amp; <span class="fn">PTE_ADDR_MASK</span>);
+    <span class="tp">pte_t</span>  e2   = pd[(vaddr &gt;&gt; <span class="num">21</span>) &amp; <span class="num">0x1FF</span>];
+    <span class="kw">if</span> (!(e2 &amp; <span class="fn">PTE_PRESENT</span>)) <span class="kw">return</span> <span class="num">0</span>;
+
+    <span class="tp">pte_t</span> *pt   = <span class="fn">phys_to_virt</span>(e2 &amp; <span class="fn">PTE_ADDR_MASK</span>);
+    <span class="kw">return</span> &amp;pt[(vaddr &gt;&gt; <span class="num">12</span>) &amp; <span class="num">0x1FF</span>];
+}
+
+<span class="cm">/* Mark a page as read-only and flush its TLB entry */</span>
+<span class="tp">void</span> <span class="fn">make_page_readonly</span>(<span class="tp">uint64_t</span> cr3_phys, <span class="tp">uint64_t</span> vaddr) {
+    <span class="tp">pte_t</span> *pte = <span class="fn">walk_to_pte</span>(cr3_phys, vaddr);
+    <span class="kw">if</span> (!pte) <span class="kw">return</span>;
+
+    *pte &amp;= ~<span class="fn">PTE_WRITABLE</span>;                       <span class="cm">/* clear R/W bit */</span>
+    <span class="cm">/* memory fence + TLB flush for this specific page */</span>
+    <span class="kw">__asm__</span> <span class="kw">volatile</span>(
+        <span class="str">"mfence\n\t"</span>
+        <span class="str">"invlpg (%0)"</span>
+        :: <span class="str">"r"</span>(vaddr) : <span class="str">"memory"</span>
+    );
+}
+
+<span class="cm">/* Mark a page as non-executable (set NX bit) */</span>
+<span class="tp">void</span> <span class="fn">make_page_noexec</span>(<span class="tp">uint64_t</span> cr3_phys, <span class="tp">uint64_t</span> vaddr) {
+    <span class="tp">pte_t</span> *pte = <span class="fn">walk_to_pte</span>(cr3_phys, vaddr);
+    <span class="kw">if</span> (!pte) <span class="kw">return</span>;
+
+    *pte |= <span class="fn">PTE_NX</span>;                               <span class="cm">/* set execute-disable bit */</span>
+    <span class="kw">__asm__</span> <span class="kw">volatile</span>(<span class="str">"mfence\n\tinvlpg (%0)"</span> :: <span class="str">"r"</span>(vaddr) : <span class="str">"memory"</span>);
+}</pre>
+        </div>
+
+        <div class="callout">
+            <p><strong data-pt="Por que o mfence antes do invlpg?" data-en="Why mfence before invlpg?">Por que o <code>mfence</code> antes do <code>invlpg</code>?</strong></p>
+            <p class="lang-pt">Processadores x86 possuem um <em>store buffer</em> — escritas em memória
+            podem não ser visíveis imediatamente para outros componentes do pipeline. Sem a barreira de
+            memória (<code>mfence</code>), a MMU poderia executar <code>invlpg</code> antes que a escrita
+            na PTE tivesse propagado para o cache, resultando em uma TLB com a nova tradução mas uma PTE
+            ainda com o valor antigo. O <code>mfence</code> garante que o store seja drenado antes da
+            invalidação.</p>
+            <p class="lang-en" style="display:none">x86 processors have a <em>store buffer</em> — memory
+            writes may not be immediately visible to other pipeline components. Without the memory barrier
+            (<code>mfence</code>), the MMU could execute <code>invlpg</code> before the PTE write had
+            propagated to cache, leaving the TLB with the new translation but the PTE still holding the
+            old value. The <code>mfence</code> ensures the store is drained before the invalidation.</p>
+        </div>
+    </section>
+
+    <!-- 05 — PERFORMANCE & SEGURANÇA -->
+    <section class="post-section" id="perf-sec">
+        <div class="section-label">05</div>
+        <h2 data-pt="Performance, Segurança e Sistemas Embarcados"
+            data-en="Performance, Security and Embedded Systems">
+            <span data-pt="Performance, Segurança e Sistemas Embarcados"
+                  data-en="Performance, Security and Embedded Systems">Performance, Segurança e Sistemas Embarcados</span>
+        </h2>
+
+        <h3>// <span data-pt="Segurança: NX, ASLR, SMEP e KPTI" data-en="Security: NX, ASLR, SMEP and KPTI">Segurança: NX, ASLR, SMEP e KPTI</span></h3>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="mitigações baseadas em paging" data-en="paging-based mitigations">mitigações baseadas em paging</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  <span class="op">NX / XD bit</span>  (PTE bit 63, requires IA32_EFER.NXE=1)
+  ├── Marks pages as non-executable at the hardware level.
+  ├── Stack, heap, data segments: NX=1  →  code injection fails even if overflowed.
+  └── Bypass: ROP (reuses existing executable code — paging cannot stop this).
+
+  <span class="op">ASLR</span>  (kernel feature: /proc/sys/kernel/randomize_va_space)
+  ├── Randomizes virtual base addresses of stack, heap, mmap, vDSO at exec time.
+  ├── Works entirely through page table mappings — no hardware cost.
+  ├── 64-bit ASLR entropy: ~28 bits for stack, ~28 bits for mmap base.
+  └── Bypass: information leak (a single leaked pointer defeats ASLR entirely).
+
+  <span class="op">SMEP</span>  (CR4.SMEP=1, Supervisor Mode Execution Prevention)
+  ├── CPU refuses to execute code on pages marked U/S=1 when in ring 0.
+  ├── Prevents kernel from jumping into user-space shellcode (ret2user attacks).
+  └── Enforced by MMU per-access, zero overhead.
+
+  <span class="op">SMAP</span>  (CR4.SMAP=1, Supervisor Mode Access Prevention)
+  ├── CPU refuses to READ/WRITE pages marked U/S=1 when in ring 0 (without STAC/CLAC).
+  └── Forces kernel to explicitly mark user-memory accesses (copy_from_user et al.).
+
+  <span class="op">KPTI</span>  (Kernel Page Table Isolation — Meltdown fix, Linux 4.15+)
+  ├── User-space page tables contain NO kernel mappings (except a small trampoline stub).
+  ├── On every syscall/interrupt: CR3 switch to full kernel page table.
+  ├── On return to user: CR3 switch back to user page table.
+  └── Cost: ~100–200 ns per syscall on non-PCID CPUs (measurable in I/O-bound workloads).
+</pre>
+        </div>
+
+        <h3>// <span data-pt="Performance: onde o paging cobra seu custo" data-en="Performance: where paging extracts its cost">Performance: onde o paging cobra seu custo</span></h3>
+
+        <p class="lang-pt">
+            Em workloads de alta frequência de syscall (servidores de rede, bancos de dados), a TLB e
+            as tabelas de página são gargalos mensuráveis. As estratégias de mitigação incluem:
+            <em>huge pages</em> (2MB) para reduzir entradas de TLB; <code>mlock()</code>/<code>mlockall()</code>
+            para pré-fixar páginas e evitar page faults em runtime; e <code>io_uring</code> para reduzir
+            o número de context switches. Em benchmarks do PostgreSQL, a migração para huge pages resultou
+            em ganhos de 10–30% em throughput puro por redução de TLB pressure.
+        </p>
+        <p class="lang-en" style="display:none">
+            In high-syscall-frequency workloads (network servers, databases), the TLB and page tables are
+            measurable bottlenecks. Mitigation strategies include: <em>huge pages</em> (2MB) to reduce TLB
+            entries; <code>mlock()</code>/<code>mlockall()</code> to pre-pin pages and avoid runtime page
+            faults; and <code>io_uring</code> to reduce context switches. In PostgreSQL benchmarks, migrating
+            to huge pages delivered 10–30% throughput gains purely from reduced TLB pressure.
+        </p>
+
+        <h3>// <span data-pt="Sistemas Embarcados: MMU vs MPU" data-en="Embedded Systems: MMU vs MPU">Sistemas Embarcados: MMU vs MPU</span></h3>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="comparativo: MMU (x86/ARM-A) vs MPU (ARM Cortex-M)" data-en="comparison: MMU (x86/ARM-A) vs MPU (ARM Cortex-M)">comparativo: MMU (x86/ARM-A) vs MPU (ARM Cortex-M)</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+                    MMU (x86_64 / ARMv8-A)      MPU (ARM Cortex-M / RISC-V w/o paging)
+  ─────────────────────────────────────────────────────────────────────────────────────
+  Virtual address?  YES — full translation        NO — physical addresses only
+  Isolation model   Per-page (4KB granularity)    Per-region (8–16 regions, power-of-2)
+  Page tables       4-level tree in RAM           None (config registers in CPU)
+  TLB               Yes (~64–2048 entries)        None
+  Latency           Non-deterministic (TLB miss)  Deterministic (single cycle check)
+  Paging/Swap       Yes (demand paging)           No
+  Use case          Desktop, server, smartphone   MCU, RTOS, safety-critical (IEC 61508)
+  Die area / power  High                          Minimal
+  ─────────────────────────────────────────────────────────────────────────────────────
+  RISC-V note: Sv39/Sv48/Sv57 paging brings full MMU to embedded Linux (BeagleBone V, etc.)
+</pre>
+        </div>
+
+        <p class="lang-pt">
+            O custo de um TLB miss não-determinístico é inaceitável em sistemas de tempo real rígido
+            (<em>hard real-time</em>). Kernels como FreeRTOS e Zephyr rodando em Cortex-M não têm MMU
+            justamente por isso. Quando Linux é usado em contextos de RT (PREEMPT_RT patches), o padrão
+            é chamar <code>mlockall(MCL_CURRENT | MCL_FUTURE)</code> na inicialização para pre-fault todas
+            as páginas do processo, garantindo que nenhum page fault ocorra em tempo de execução real.
+        </p>
+        <p class="lang-en" style="display:none">
+            The non-deterministic cost of a TLB miss is unacceptable in hard real-time systems. Kernels
+            such as FreeRTOS and Zephyr running on Cortex-M have no MMU for exactly this reason. When
+            Linux is used in RT contexts (PREEMPT_RT patches), the standard practice is to call
+            <code>mlockall(MCL_CURRENT | MCL_FUTURE)</code> at startup to pre-fault all process pages,
+            ensuring no page fault occurs during actual real-time execution.
+        </p>
+
+        <div class="callout warn">
+            <p><strong data-pt="Execução Especulativa e os Limites do Paging" data-en="Speculative Execution and the Limits of Paging">Execução Especulativa <span data-pt="e os Limites do Paging" data-en="and the Limits of Paging">e os Limites do Paging</span></strong></p>
+            <p class="lang-pt">Meltdown demonstrou que a separação de domínios garantida pelo bit U/S é
+            contornável em CPUs com execução fora de ordem. O pipeline especula que o acesso à página do
+            kernel vai ter permissão e carrega o dado no registrador <em>antes</em> do #PF ser levantado.
+            Embora o #PF seja eventualmente acionado e o resultado descartado arquiteturalmente, o dado
+            já contaminando o cache L1 — e é recuperável via canal lateral de tempo. A correção (KPTI)
+            é uma solução de paging pura: remover o mapeamento do kernel completamente do espaço do
+            usuário. Não há como o hardware acessar o que não está mapeado.</p>
+            <p class="lang-en" style="display:none">Meltdown demonstrated that the domain separation
+            guaranteed by the U/S bit can be bypassed on out-of-order CPUs. The pipeline speculates that
+            the kernel page access will be permitted and loads the data into a register <em>before</em>
+            the #PF is raised. Although the #PF is eventually triggered and the result is architecturally
+            discarded, the data has already contaminated the L1 cache — and is recoverable via a timing
+            side-channel. The fix (KPTI) is a pure paging solution: remove the kernel mapping entirely
+            from user space. Hardware cannot access what is not mapped.</p>
+        </div>
+    </section>
+
+    <div class="post-nav">
+        <a href="../posts.html">
+            <i class='bx bx-arrow-back'></i>
+            <span data-pt="Voltar aos posts" data-en="Back to posts">Voltar aos posts</span>
+        </a>
+        <a href="https://github.com/zahanzo" target="_blank">
+            <span data-pt="Ver no GitHub" data-en="View on GitHub">Ver no GitHub</span>
+            <i class='bx bx-link-external'></i>
+        </a>
+    </div>
+
+</article>
+</main>
+
+<footer>
+    <p>&copy; 2026 Robert Souza Lages.</p>
+</footer>
+
+<script>
+    let currentLang = localStorage.getItem('lang') || 'pt';
+
+    function setLang(lang) {
+        currentLang = lang;
+        localStorage.setItem('lang', lang);
+        document.querySelectorAll('[data-pt], [data-en]').forEach(el => {
+            const val = el.getAttribute('data-' + lang);
+            if (val !== null) el.textContent = val;
+        });
+        document.querySelectorAll('.lang-pt').forEach(el => el.style.display = lang === 'pt' ? '' : 'none');
+        document.querySelectorAll('.lang-en').forEach(el => el.style.display = lang === 'en' ? '' : 'none');
+        document.documentElement.lang = lang === 'pt' ? 'pt-BR' : 'en';
+        document.querySelectorAll('.lang-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.id === 'btn-' + lang);
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        document.body.addEventListener('click', (e) => {
+            const btn = e.target.closest('.lang-btn');
+            if (btn && btn.id) setLang(btn.id.replace('btn-', ''));
+        });
+        const hamburger = document.querySelector('.hamburger');
+        const navLinks  = document.querySelector('.nav-links');
+        if (hamburger) hamburger.addEventListener('click', () => navLinks.classList.toggle('active'));
+        setLang(currentLang);
+    });
+</script>
+
+</body>
+</html>
