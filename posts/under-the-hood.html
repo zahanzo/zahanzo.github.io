@@ -189,13 +189,13 @@
         </p>
 
         <div class="intro-diagram">
-            <span class="wh">O Processador (o gerente) precisa resolver:</span><br><br>
-            <span class="hi">  Problema 1 →</span>  <span class="wh">"Onde coloco minhas anotações enquanto trabalho?"</span><br>
-            <span class="am">               </span>  <span class="mu">Solução: A Stack (Pilha)</span><br><br>
-            <span class="hi">  Problema 2 →</span>  <span class="wh">"Como evito que o trabalho de A misture com o de B?"</span><br>
-            <span class="am">               </span>  <span class="mu">Solução: Virtual Memory & Paging</span><br><br>
-            <span class="hi">  Problema 3 →</span>  <span class="wh">"Como saber quando algo urgente acontece?"</span><br>
-            <span class="am">               </span>  <span class="mu">Solução: Interrupt Handling (Tratamento de Interrupções)</span>
+            <span class="wh">The Processor (the manager) must solve:</span><br><br>
+            <span class="hi">  Problem 1 →</span>  <span class="wh">"Where do I keep my notes while working?"</span><br>
+            <span class="am">              </span>  <span class="mu">Solution: The Stack</span><br><br>
+            <span class="hi">  Problem 2 →</span>  <span class="wh">"How do I keep A's work separate from B's?"</span><br>
+            <span class="am">              </span>  <span class="mu">Solution: Virtual Memory & Paging</span><br><br>
+            <span class="hi">  Problem 3 →</span>  <span class="wh">"How do I know when something urgent happens?"</span><br>
+            <span class="am">              </span>  <span class="mu">Solution: Interrupt Handling</span>
         </div>
 
         <p class="lang-pt">
@@ -245,16 +245,16 @@
 
         <div class="intro-diagram">
             <span class="mu">  ┌─────────────────────────────────┐</span><br>
-            <span class="mu">  │</span> <span class="hi">→ Tarefa ativa: responder pergunta</span>  <span class="mu">│ ← topo da pilha</span><br>
+            <span class="mu">  │</span> <span class="hi">→ Active task: answer question</span>      <span class="mu">│ ← stack top</span><br>
             <span class="mu">  ├─────────────────────────────────┤</span><br>
-            <span class="mu">  │</span> <span class="am">   pausada: buscar dado no arquivo</span> <span class="mu">│</span><br>
+            <span class="mu">  │</span> <span class="am">   paused: look up data in archive</span>  <span class="mu">│</span><br>
             <span class="mu">  ├─────────────────────────────────┤</span><br>
-            <span class="mu">  │</span> <span class="am">   pausada: calcular números</span>       <span class="mu">│</span><br>
+            <span class="mu">  │</span> <span class="am">   paused: calculate numbers</span>        <span class="mu">│</span><br>
             <span class="mu">  ├─────────────────────────────────┤</span><br>
-            <span class="mu">  │</span> <span class="am">   pausada: relatório trimestral</span>   <span class="mu">│ ← base</span><br>
+            <span class="mu">  │</span> <span class="am">   paused: quarterly report</span>         <span class="mu">│ ← base</span><br>
             <span class="mu">  └─────────────────────────────────┘</span><br>
             <br>
-            <span class="mu">  Quando a tarefa do topo termina → a folha é descartada → volta para a de baixo.</span>
+            <span class="mu">  When the top task finishes → its sheet is discarded → back to the one below.</span>
         </div>
 
         <p class="lang-pt">
@@ -515,26 +515,26 @@
         </p>
 
         <div class="intro-diagram">
-<span class="wh">Você clica no ícone do navegador</span>
+<span class="wh">You click the browser icon</span>
 <span class="mu">         │</span>
 <span class="mu">         ▼</span>
-<span class="hi">  [INTERRUPT]</span>  <span class="mu">O mouse gera um sinal de hardware</span>
-<span class="mu">               A IDT mapeia: "sinal do mouse → chame o driver do mouse"</span>
-<span class="mu">               O processador para o que fazia, anota onde estava (Stack!)</span>
-<span class="mu">               Trata o evento, volta ao que fazia</span>
+<span class="hi">  [INTERRUPT]</span>  <span class="mu">The mouse generates a hardware signal</span>
+<span class="mu">               The IDT maps: "mouse signal → call the mouse driver"</span>
+<span class="mu">               The processor stops, notes where it was (Stack!)</span>
+<span class="mu">               Handles the event, resumes what it was doing</span>
 <span class="mu">         │</span>
 <span class="mu">         ▼</span>
-<span class="hi">  [PAGING]</span>     <span class="mu">O OS identifica que o clique foi num ícone → precisa carregar o programa</span>
-<span class="mu">               Reserva um espaço isolado de memória virtual para o novo processo</span>
-<span class="mu">               Chrome, Word e o novo programa têm mesas separadas — sem conflito</span>
+<span class="hi">  [PAGING]</span>     <span class="mu">The OS detects a click on an icon → needs to load the program</span>
+<span class="mu">               Reserves an isolated virtual memory space for the new process</span>
+<span class="mu">               Chrome, Word and the new program each have separate desks — no conflict</span>
 <span class="mu">         │</span>
 <span class="mu">         ▼</span>
-<span class="hi">  [STACK]</span>      <span class="mu">O carregador começa a executar o código do programa</span>
-<span class="mu">               Cada função chamada empilha um frame na Stack</span>
-<span class="mu">               A hierarquia de chamadas cresce e diminui à medida que o programa inicia</span>
+<span class="hi">  [STACK]</span>      <span class="mu">The loader starts executing the program code</span>
+<span class="mu">               Each called function pushes a frame onto the Stack</span>
+<span class="mu">               The call hierarchy grows and shrinks as the program starts up</span>
 <span class="mu">         │</span>
 <span class="mu">         ▼</span>
-<span class="am">  Janela aparece na tela</span>  <span class="mu">(via mais interrupções da placa de vídeo)</span>
+<span class="am">  Window appears on screen</span>  <span class="mu">(via more interrupts from the GPU)</span>
         </div>
 
         <p class="lang-pt">
