@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bitwise Operations in C: The ELI5 Guide for Hardware Manipulation | Robert Souza Lages</title>
+    <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+    <link rel="stylesheet" href="style.css">
+    <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
+</head>
+<body>
+
+<nav class="navbar">
+    <div class="logo"><span>0x</span>Robert<span>_</span></div>
+    <ul class="nav-links">
+        <li><a href="../index.html"    data-pt="Sobre"    data-en="About">Sobre</a></li>
+        <li><a href="../resume.html"   data-pt="Currículo" data-en="Resume">Currículo</a></li>
+        <li><a href="../projects.html" data-pt="Projetos"  data-en="Projects">Projetos</a></li>
+        <li><a href="../posts.html" class="active">Posts</a></li>
+    </ul>
+    <div class="navbar-right">
+        <div class="lang-toggle">
+            <button class="lang-btn active" id="btn-pt">PT</button>
+            <button class="lang-btn"        id="btn-en">EN</button>
+        </div>
+        <div class="hamburger"><i class='bx bx-menu'></i></div>
+    </div>
+</nav>
+
+<main>
+<article class="post-wrapper">
+
+    <header class="post-header">
+        <div class="post-breadcrumb">
+            <a href="../posts.html">posts</a><span>/</span><span>bitwise-operations</span>
+        </div>
+        <div class="post-meta">
+            <span class="post-tag">C/C++</span>
+            <span class="post-tag">EMBEDDED</span>
+            <span class="post-tag">FUNDAMENTOS</span>
+            <time class="post-date" datetime="2026-05-26">2026-05-26</time>
+        </div>
+        <h1 class="post-title">
+            <span data-pt="Operações Bitwise em C:" data-en="Bitwise Operations in C:">Operações Bitwise em C:</span><br>
+            <span data-pt="O Guia ELI5 para Manipulação de Hardware" data-en="The ELI5 Guide for Hardware Manipulation">O Guia ELI5 para Manipulação de Hardware</span>
+        </h1>
+        <p class="post-summary lang-pt">
+            Você já olhou para um código com <code>|=</code>, <code>&amp;= ~</code> e <code>&lt;&lt;</code>
+            e sentiu como se estivesse lendo hieroglifos? Não está sozinho. Este post vai transformar
+            operações bitwise de magia negra em ferramentas simples e intuitivas — usando analogias do
+            mundo real, diagramas passo a passo e um exemplo prático de hardware embarcado.
+        </p>
+        <p class="post-summary lang-en" style="display:none">
+            Have you ever stared at code with <code>|=</code>, <code>&amp;= ~</code> and <code>&lt;&lt;</code>
+            and felt like you were reading hieroglyphs? You are not alone. This post will transform
+            bitwise operations from black magic into simple, intuitive tools — using real-world analogies,
+            step-by-step diagrams, and a practical embedded hardware example.
+        </p>
+
+        <div class="toc lang-pt">
+            <div class="toc-title">// ÍNDICE</div>
+            <ol>
+                <li><a href="#porque">Por que se importar com bits individuais?</a></li>
+                <li><a href="#toolbelt">A Caixa de Ferramentas: os 6 operadores</a></li>
+                <li><a href="#trindade">A Santíssima Trindade: Set, Clear, Check, Toggle</a></li>
+                <li><a href="#embarcado">Exemplo Real: 8 sensores industriais em 1 byte</a></li>
+            </ol>
+        </div>
+        <div class="toc lang-en" style="display:none">
+            <div class="toc-title">// TABLE OF CONTENTS</div>
+            <ol>
+                <li><a href="#porque">Why care about individual bits?</a></li>
+                <li><a href="#toolbelt">The Toolbelt: the 6 operators</a></li>
+                <li><a href="#trindade">The Holy Trinity: Set, Clear, Check, Toggle</a></li>
+                <li><a href="#embarcado">Real Example: 8 industrial sensors in 1 byte</a></li>
+            </ol>
+        </div>
+    </header>
+
+    <!-- 01 — POR QUE BITS -->
+    <section class="post-section" id="porque">
+        <div class="section-label">01</div>
+        <h2 data-pt="Por que se importar com bits individuais?"
+            data-en="Why care about individual bits?">
+            <span data-pt="Por que se importar com bits individuais?" data-en="Why care about individual bits?">Por que se importar com bits individuais?</span>
+        </h2>
+
+        <p class="lang-pt">
+            Antes de qualquer código, vamos entender o problema. Imagine que você tem um
+            microcontrolador com <strong style="color:#fff">512 bytes de RAM</strong>.
+            Total. Para o programa inteiro. Se você usar um <code>bool</code> (que ocupa
+            1 byte inteiro) para representar cada um dos 8 sensores da sua máquina industrial,
+            você gastou 8 bytes. Se você usar 1 bit por sensor, você gastou 1 byte — para
+            os mesmos 8 sensores.
+        </p>
+        <p class="lang-en" style="display:none">
+            Before any code, let us understand the problem. Imagine you have a microcontroller
+            with <strong style="color:#fff">512 bytes of RAM</strong>. Total. For the entire
+            program. If you use one <code>bool</code> (which takes a full byte) per sensor
+            for 8 industrial machine sensors, you spent 8 bytes. If you use 1 bit per sensor,
+            you spent 1 byte — for the same 8 sensors.
+        </p>
+
+        <p class="lang-pt">
+            Mas eficiência de memória é apenas o começo. O motivo real pelo qual todo
+            programador embarcado precisa dominar bits é este: <strong style="color:#fff">registradores
+            de hardware são grupos de bits</strong>. Quando você configura um GPIO (pino
+            de entrada/saída), ativa uma UART, ou lê o status de um timer, você não está
+            chamando uma função bonita — você está escrevendo e lendo registradores físicos
+            onde <em>cada bit controla algo diferente</em>.
+        </p>
+        <p class="lang-en" style="display:none">
+            But memory efficiency is just the beginning. The real reason every embedded programmer
+            needs to master bits is this: <strong style="color:#fff">hardware registers are groups
+            of bits</strong>. When you configure a GPIO (input/output pin), enable a UART, or
+            read a timer status, you are not calling a nice function — you are writing and reading
+            physical registers where <em>each bit controls something different</em>.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="um byte = uma fileira de 8 interruptores de luz" data-en="one byte = a row of 8 light switches">one byte = a row of 8 light switches</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  One uint8_t value = 8 individual switches you can flip independently.
+
+  Bit number:   7    6    5    4    3    2    1    0
+              ┌────┬────┬────┬────┬────┬────┬────┬────┐
+  Value 0x00: │ 0  │ 0  │ 0  │ 0  │ 0  │ 0  │ 0  │ 0  │  all switches OFF
+              └────┴────┴────┴────┴────┴────┴────┴────┘
+
+  Value 0xA5: │ 1  │ 0  │ 1  │ 0  │ 0  │ 1  │ 0  │ 1  │  some ON, some OFF
+              └────┴────┴────┴────┴────┴────┴────┴────┘
+
+  Value 0xFF: │ 1  │ 1  │ 1  │ 1  │ 1  │ 1  │ 1  │ 1  │  all switches ON
+              └────┴────┴────┴────┴────┴────┴────┴────┘
+
+  The goal: flip ONE switch without disturbing any of the others.
+  That is exactly what bitwise operators do.
+</pre>
+        </div>
+
+        <div class="callout">
+            <p><strong data-pt="A regra de ouro antes de começar" data-en="The golden rule before you start">// <span data-pt="A regra de ouro antes de começar" data-en="The golden rule before you start">A regra de ouro antes de começar</span></strong></p>
+            <p class="lang-pt">Sempre use tipos de tamanho fixo para operações bitwise:
+            <code>uint8_t</code>, <code>uint16_t</code>, <code>uint32_t</code> (de
+            <code>&lt;stdint.h&gt;</code>). Nunca use <code>int</code> ou <code>unsigned int</code>
+            — o tamanho deles varia por plataforma e tipos com sinal têm comportamento
+            inesperado com o operador <code>~</code> e com o shift direito.</p>
+            <p class="lang-en" style="display:none">Always use fixed-size types for bitwise
+            operations: <code>uint8_t</code>, <code>uint16_t</code>, <code>uint32_t</code>
+            (from <code>&lt;stdint.h&gt;</code>). Never use <code>int</code> or
+            <code>unsigned int</code> — their size varies by platform and signed types have
+            unexpected behavior with <code>~</code> and right shift.</p>
+        </div>
+    </section>
+
+    <!-- 02 — TOOLBELT -->
+    <section class="post-section" id="toolbelt">
+        <div class="section-label">02</div>
+        <h2 data-pt="A Caixa de Ferramentas: os 6 operadores"
+            data-en="The Toolbelt: the 6 operators">
+            <span data-pt="A Caixa de Ferramentas" data-en="The Toolbelt">A Caixa de Ferramentas</span>
+        </h2>
+
+        <h3>// AND (<code>&amp;</code>) — <span data-pt="O Segurança Rigoroso" data-en="The Strict Bouncer">O Segurança Rigoroso</span></h3>
+
+        <p class="lang-pt">
+            AND só retorna <code>1</code> se <strong style="color:#fff">ambos</strong> os bits
+            de entrada forem <code>1</code>. Pense num segurança rigoroso na porta de uma festa
+            exclusiva: você só entra se tiver o ingresso VIP <em>e</em> o documento de identidade.
+            Um dos dois? Não passa.
+        </p>
+        <p class="lang-en" style="display:none">
+            AND returns <code>1</code> only if <strong style="color:#fff">both</strong> input bits
+            are <code>1</code>. Think of a strict bouncer at an exclusive party: you only get in
+            if you have the VIP ticket <em>and</em> your ID. Just one of them? No entry.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">AND (&amp;) — truth table and example</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  A   B  |  A & B       "BOTH must be 1"
+  ─────────────────
+  0   0  |    0
+  0   1  |    0
+  1   0  |    0
+  1   1  |    1         ← ONLY this case returns 1
+
+  Example with 8 bits:
+  0b10110101   (our data)
+  0b00001111   (mask: we only care about the lower 4 bits)
+  ──────────── &
+  0b00000101   ← only the bits where BOTH were 1 survived
+
+  Use cases: checking if a bit is set, masking unwanted bits.
+</pre>
+        </div>
+
+        <h3>// OR (<code>|</code>) — <span data-pt="O Segurança Tranquilo" data-en="The Relaxed Bouncer">O Segurança Tranquilo</span></h3>
+
+        <p class="lang-pt">
+            OR retorna <code>1</code> se <strong style="color:#fff">pelo menos um</strong> dos
+            bits de entrada for <code>1</code>. O segurança relaxado: você entra se tiver o
+            ingresso VIP <em>ou</em> o documento. Qualquer um serve. Só fica de fora quem não
+            tem nada.
+        </p>
+        <p class="lang-en" style="display:none">
+            OR returns <code>1</code> if <strong style="color:#fff">at least one</strong> input
+            bit is <code>1</code>. The relaxed bouncer: you get in if you have the VIP ticket
+            <em>or</em> your ID. Either works. You only stay out if you have neither.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">OR (|) — truth table and example</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  A   B  |  A | B       "EITHER can be 1"
+  ─────────────────
+  0   0  |    0         ← ONLY this case returns 0
+  0   1  |    1
+  1   0  |    1
+  1   1  |    1
+
+  Example with 8 bits:
+  0b10000000   (our data: only bit 7 is on)
+  0b00000100   (mask: we want to turn ON bit 2)
+  ──────────── |
+  0b10000100   ← bit 2 is now ON, everything else untouched
+
+  Use cases: turning ON (setting) a specific bit.
+</pre>
+        </div>
+
+        <h3>// XOR (<code>^</code>) — <span data-pt="O Interruptor Toggle" data-en="The Toggle Switch">O Interruptor Toggle</span></h3>
+
+        <p class="lang-pt">
+            XOR retorna <code>1</code> quando as entradas são <strong style="color:#fff">diferentes</strong>.
+            Pense num interruptor de luz de escada — dois interruptores, e a luz acende quando
+            eles estão em estados opostos. A propriedade mágica do XOR: aplicá-lo duas vezes
+            com o mesmo valor restaura o original. Isso o torna perfeito para <em>toggle</em>
+            (inverter um bit).
+        </p>
+        <p class="lang-en" style="display:none">
+            XOR returns <code>1</code> when the inputs are <strong style="color:#fff">different</strong>.
+            Think of a staircase light switch — two switches, and the light turns on when they are
+            in opposite states. XOR's magical property: applying it twice with the same value
+            restores the original. This makes it perfect for <em>toggling</em> (inverting a bit).
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">XOR (^) — truth table and example</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  A   B  |  A ^ B       "DIFFERENT = 1, SAME = 0"
+  ─────────────────
+  0   0  |    0         ← same
+  0   1  |    1         ← different
+  1   0  |    1         ← different
+  1   1  |    0         ← same
+
+  Example — TOGGLE bit 3:
+  0b11001000   (our data)
+  0b00001000   (mask: bit 3 only)
+  ──────────── ^
+  0b11000000   ← bit 3 was 1, now it is 0 (toggled!)
+
+  Apply again:
+  0b11000000   (current state)
+  0b00001000   (same mask)
+  ──────────── ^
+  0b11001000   ← bit 3 is back to 1 (toggled back!)
+
+  Use cases: flipping a bit without knowing its current state.
+</pre>
+        </div>
+
+        <h3>// NOT (<code>~</code>) — <span data-pt="O Inversor" data-en="The Inverter">O Inversor</span></h3>
+
+        <p class="lang-pt">
+            NOT é o mais simples: inverte <strong style="color:#fff">todos os bits</strong>
+            de um número. Cada <code>0</code> vira <code>1</code> e cada <code>1</code> vira
+            <code>0</code>. É como ligar todos os interruptores OFF que estão ON, e ON os que
+            estão OFF, ao mesmo tempo.
+        </p>
+        <p class="lang-en" style="display:none">
+            NOT is the simplest one: it flips <strong style="color:#fff">every single bit</strong>
+            in a number. Every <code>0</code> becomes <code>1</code> and every <code>1</code>
+            becomes <code>0</code>. It is like flipping every switch — ON becomes OFF,
+            OFF becomes ON, all at once.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">NOT (~) — bit inversion</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  ~0b00000001  =  0b11111110     flip every bit
+
+  ~0b10110100  =  0b01001011     every 1 → 0, every 0 → 1
+
+  Critical use: creating an "inverse mask" to clear a bit:
+  mask:          0b00000100      bit 2 only
+  ~mask:         0b11111011      everything EXCEPT bit 2
+  data & ~mask:  clears bit 2, leaves all others untouched  ← KEY PATTERN
+
+  Warning: always cast to uint8_t (or your target type) after NOT:
+  uint8_t x = ~0b00000001;   // x = 0xFE (correct on 8-bit)
+  int y     = ~0b00000001;   // y = 0xFFFFFFFE (32-bit sign extension!)
+</pre>
+        </div>
+
+        <h3>// Left Shift (<code>&lt;&lt;</code>) — <span data-pt="O Elevador de Bits" data-en="The Bit Elevator">O Elevador de Bits</span></h3>
+
+        <p class="lang-pt">
+            O shift esquerdo move todos os bits para a esquerda em N posições, preenchendo
+            os lugares vazios à direita com zeros. É como um elevador que sobe os bits N andares.
+            A aplicação mais importante: <strong style="color:#fff"><code>1 &lt;&lt; n</code>
+            cria uma máscara com exatamente o bit N ligado</strong> — e nada mais.
+        </p>
+        <p class="lang-en" style="display:none">
+            Left shift moves all bits to the left by N positions, filling empty spots on the
+            right with zeros. It is like an elevator that takes the bits up N floors.
+            The most important application: <strong style="color:#fff"><code>1 &lt;&lt; n</code>
+            creates a mask with exactly bit N turned on</strong> — and nothing else.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">Left Shift (&lt;&lt;) — creating bit masks</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  (1 << 0) = 0b00000001   bit 0
+  (1 << 1) = 0b00000010   bit 1
+  (1 << 2) = 0b00000100   bit 2
+  (1 << 3) = 0b00001000   bit 3
+  (1 << 4) = 0b00010000   bit 4
+  (1 << 5) = 0b00100000   bit 5
+  (1 << 6) = 0b01000000   bit 6
+  (1 << 7) = 0b10000000   bit 7
+
+  The pattern:  (1 << N)  =  "a 1 sitting in position N"
+  This is the foundation of the Holy Trinity patterns (Section 03).
+
+  Moving existing data:
+  0b00000011 << 2  =  0b00001100   (bits moved 2 positions left)
+  0b10000000 << 1  =  0b00000000   (bit fell off the edge — overflow!)
+</pre>
+        </div>
+
+        <h3>// Right Shift (<code>&gt;&gt;</code>) — <span data-pt="O Elevador Descendo" data-en="The Elevator Going Down">O Elevador Descendo</span></h3>
+
+        <p class="lang-pt">
+            O shift direito move bits para a direita em N posições. Para leitura de bits,
+            ele é útil para trazer o bit de interesse para a posição 0, tornando fácil
+            checar seu valor. Use <strong style="color:#fff">sempre</strong>
+            com tipos sem sinal (<code>uint8_t</code>) — em tipos com sinal, o comportamento
+            é definido pela implementação (pode preencher com 1 ou com 0 no bit mais alto).
+        </p>
+        <p class="lang-en" style="display:none">
+            Right shift moves bits to the right by N positions. For bit reading, it is useful
+            to bring a bit of interest down to position 0, making it easy to check its value.
+            <strong style="color:#fff">Always</strong> use it with unsigned types
+            (<code>uint8_t</code>) — on signed types, behavior is implementation-defined
+            (it may fill with 1s or 0s in the high bit).
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">Right Shift (&gt;&gt;) — reading specific bits</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  0b10110100 >> 2  =  0b00101101   (bits moved 2 positions right)
+  0b00001000 >> 3  =  0b00000001   (bit 3 is now at position 0 → easy to read)
+
+  Reading bit 5 of a register:
+  reg = 0b00100000
+  (reg >> 5) = 0b00000001   ← now just check if this is 1 or 0
+  (reg >> 5) & 1 = 1        ← AND with 1 isolates just the lowest bit
+</pre>
+        </div>
+    </section>
+
+    <!-- 03 — TRINDADE -->
+    <section class="post-section" id="trindade">
+        <div class="section-label">03</div>
+        <h2 data-pt="A Santíssima Trindade: Set, Clear, Check, Toggle"
+            data-en="The Holy Trinity: Set, Clear, Check, Toggle">
+            <span data-pt="A Santíssima Trindade" data-en="The Holy Trinity">A Santíssima Trindade</span>
+        </h2>
+
+        <p class="lang-pt">
+            Estas são as 4 operações que você usará 99% do tempo em código embarcado.
+            Aprenda os padrões uma vez e você os reconhecerá em qualquer código de hardware
+            do mundo. Vamos trabalhar com um registrador de exemplo
+            <code>uint8_t reg = 0b10110001</code> e operar no <strong style="color:#fff">bit 2</strong>.
+        </p>
+        <p class="lang-en" style="display:none">
+            These are the 4 operations you will use 99% of the time in embedded code.
+            Learn these patterns once and you will recognize them in any hardware code in the world.
+            We will work with an example register <code>uint8_t reg = 0b10110001</code>
+            and operate on <strong style="color:#fff">bit 2</strong>.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="estado inicial do registrador" data-en="initial register state">initial register state</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  reg = 0b10110001
+
+  Bit:  7    6    5    4    3    2    1    0
+       ┌────┬────┬────┬────┬────┬────┬────┬────┐
+       │ 1  │ 0  │ 1  │ 1  │ 0  │ 0  │ 0  │ 1  │
+       └────┴────┴────┴────┴────┴────┴────┴────┘
+                                   ↑
+                               bit 2 = 0 (OFF)
+                               This is our target.
+</pre>
+        </div>
+
+        <h3>// <span data-pt="1. SET — Ligar um bit" data-en="1. SET — Turn a bit ON">1. SET — <span data-pt="Ligar um bit" data-en="Turn a bit ON">Ligar um bit</span></span></h3>
+
+        <p class="lang-pt">
+            <strong style="color:#fff">Padrão:</strong> use OR com a máscara do bit que quer ligar.
+            OR nunca desliga bits — ele só pode ligar. Perfeito.
+        </p>
+        <p class="lang-en" style="display:none">
+            <strong style="color:#fff">Pattern:</strong> use OR with the mask of the bit you want
+            to turn on. OR can never turn a bit off — it can only turn bits on. Perfect.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">SET bit N: reg |= (1 &lt;&lt; N)</span>
+                <span class="code-lang">c</span>
+            </div>
+<pre><span class="cm">/* Turn ON bit 2, leave everything else untouched */</span>
+<span class="tp">uint8_t</span> reg = <span class="num">0b10110001</span>;
+reg |= (<span class="num">1</span> &lt;&lt; <span class="num">2</span>);   <span class="cm">/* reg = reg | 0b00000100 */</span>
+
+<span class="cm">/* Step by step: */</span>
+<span class="cm">/*  reg:         1 0 1 1 0 0 0 1  (original)  */</span>
+<span class="cm">/*  (1 << 2):    0 0 0 0 0 1 0 0  (the mask)  */</span>
+<span class="cm">/*  OR result:   1 0 1 1 0 1 0 1  (bit 2 ON!) */</span></pre>
+        </div>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="resultado visual após SET" data-en="visual result after SET">visual result after SET</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  Before:  │ 1  │ 0  │ 1  │ 1  │ 0  │ 0  │ 0  │ 1  │
+  Mask:    │ 0  │ 0  │ 0  │ 0  │ 0  │ 1  │ 0  │ 0  │  (1 << 2)
+           └────┴────┴────┴────┴────┴────┴────┴────┘
+           |    |    |    |    |    |    |    |    |
+            OR  OR  OR  OR  OR  OR  OR  OR
+           ┌────┬────┬────┬────┬────┬────┬────┬────┐
+  After:   │ 1  │ 0  │ 1  │ 1  │ 0  │ 1  │ 0  │ 1  │  ← bit 2 is now 1 ✓
+           └────┴────┴────┴────┴────┴────┴────┴────┘
+                                        ↑
+                                    bit 2 = 1 (ON!)
+                                    All other bits unchanged.
+</pre>
+        </div>
+
+        <h3>// <span data-pt="2. CLEAR — Desligar um bit" data-en="2. CLEAR — Turn a bit OFF">2. CLEAR — <span data-pt="Desligar um bit" data-en="Turn a bit OFF">Desligar um bit</span></span></h3>
+
+        <p class="lang-pt">
+            <strong style="color:#fff">Padrão:</strong> use AND com o NOT da máscara. Precisamos
+            de uma máscara que tenha <code>0</code> exatamente no bit que queremos desligar e
+            <code>1</code> em todo o resto — para que AND preserve todos os outros bits e force
+            apenas o nosso alvo para zero. NOT (<code>~</code>) cria exatamente essa máscara invertida.
+        </p>
+        <p class="lang-en" style="display:none">
+            <strong style="color:#fff">Pattern:</strong> use AND with the NOT of the mask. We need
+            a mask that has a <code>0</code> exactly at the bit we want to turn off and <code>1</code>
+            everywhere else — so AND preserves all other bits and forces only our target to zero.
+            NOT (<code>~</code>) creates exactly that inverted mask.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">CLEAR bit N: reg &amp;= ~(1 &lt;&lt; N)</span>
+                <span class="code-lang">c</span>
+            </div>
+<pre><span class="cm">/* Starting from where we left off: reg = 0b10110101 (bit 2 is ON) */</span>
+<span class="tp">uint8_t</span> reg = <span class="num">0b10110101</span>;
+reg &amp;= ~(<span class="num">1</span> &lt;&lt; <span class="num">2</span>);   <span class="cm">/* reg = reg & ~(0b00000100) = reg & 0b11111011 */</span>
+
+<span class="cm">/* Step by step: */</span>
+<span class="cm">/*  (1 << 2):    0 0 0 0 0 1 0 0  */</span>
+<span class="cm">/* ~(1 << 2):    1 1 1 1 1 0 1 1  ← NOT flips everything: hole at bit 2 */</span>
+<span class="cm">/*  reg:         1 0 1 1 0 1 0 1  */</span>
+<span class="cm">/*  AND result:  1 0 1 1 0 0 0 1  ← bit 2 cleared, nothing else changed */</span></pre>
+        </div>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="resultado visual após CLEAR" data-en="visual result after CLEAR">visual result after CLEAR</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  ~(1 << 2) = 0b11111011  — a mask with a HOLE at position 2
+
+  Before:  │ 1  │ 0  │ 1  │ 1  │ 0  │ 1  │ 0  │ 1  │
+  ~mask:   │ 1  │ 1  │ 1  │ 1  │ 1  │ 0  │ 1  │ 1  │  ← 0 only at bit 2
+           └────┴────┴────┴────┴────┴────┴────┴────┘
+           AND AND AND AND AND AND AND AND
+           ┌────┬────┬────┬────┬────┬────┬────┬────┐
+  After:   │ 1  │ 0  │ 1  │ 1  │ 0  │ 0  │ 0  │ 1  │  ← bit 2 is now 0 ✓
+           └────┴────┴────┴────┴────┴────┴────┴────┘
+                                        ↑
+                                    bit 2 = 0 (OFF!)
+                                    AND with 1 = unchanged. AND with 0 = forced OFF.
+</pre>
+        </div>
+
+        <h3>// <span data-pt="3. CHECK — Ler o estado de um bit" data-en="3. CHECK — Read a bit's state">3. CHECK — <span data-pt="Ler o estado de um bit" data-en="Read a bit's state">Ler o estado de um bit</span></span></h3>
+
+        <p class="lang-pt">
+            <strong style="color:#fff">Padrão:</strong> use AND com a máscara do bit. Se o resultado
+            for diferente de zero, o bit estava ligado. Se o resultado for zero, estava desligado.
+            AND "apaga" todos os bits exceto o que queremos checar.
+        </p>
+        <p class="lang-en" style="display:none">
+            <strong style="color:#fff">Pattern:</strong> use AND with the bit mask. If the result
+            is non-zero, the bit was on. If the result is zero, it was off. AND "erases" all bits
+            except the one we want to check.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">CHECK bit N: if (reg &amp; (1 &lt;&lt; N))</span>
+                <span class="code-lang">c</span>
+            </div>
+<pre><span class="tp">uint8_t</span> reg = <span class="num">0b10110001</span>;
+
+<span class="cm">/* Method 1: direct check (most common — truthy if bit is 1) */</span>
+<span class="kw">if</span> (reg &amp; (<span class="num">1</span> &lt;&lt; <span class="num">2</span>)) {
+    <span class="fn">printf</span>(<span class="str">"Bit 2 is ON\n"</span>);
+} <span class="kw">else</span> {
+    <span class="fn">printf</span>(<span class="str">"Bit 2 is OFF\n"</span>);   <span class="cm">/* prints this — 0b10110001 bit 2 = 0 */</span>
+}
+
+<span class="cm">/* Method 2: extract to 0 or 1 explicitly */</span>
+<span class="tp">uint8_t</span> bit2_state = (reg &gt;&gt; <span class="num">2</span>) &amp; <span class="num">0x01</span>;   <span class="cm">/* 0 or 1, nothing else */</span>
+<span class="fn">printf</span>(<span class="str">"Bit 2 = %d\n"</span>, bit2_state);         <span class="cm">/* prints: Bit 2 = 0    */</span>
+
+<span class="cm">/* How the AND check works visually:                            */</span>
+<span class="cm">/*  reg:         1 0 1 1 0 0 0 1  (bit 2 is 0)                 */</span>
+<span class="cm">/*  (1 << 2):    0 0 0 0 0 1 0 0                                */</span>
+<span class="cm">/*  AND result:  0 0 0 0 0 0 0 0  ← all zeros → bit was OFF     */</span>
+<span class="cm">/*                                                               */</span>
+<span class="cm">/*  If bit 2 were 1:                                            */</span>
+<span class="cm">/*  reg:         1 0 1 1 0 1 0 1                                */</span>
+<span class="cm">/*  (1 << 2):    0 0 0 0 0 1 0 0                                */</span>
+<span class="cm">/*  AND result:  0 0 0 0 0 1 0 0  ← non-zero → bit was ON       */</span></pre>
+        </div>
+
+        <h3>// <span data-pt="4. TOGGLE — Inverter um bit" data-en="4. TOGGLE — Flip a bit">4. TOGGLE — <span data-pt="Inverter um bit" data-en="Flip a bit">Inverter um bit</span></span></h3>
+
+        <p class="lang-pt">
+            <strong style="color:#fff">Padrão:</strong> use XOR com a máscara. XOR com
+            <code>1</code> inverte o bit alvo, e XOR com <code>0</code> preserva o bit.
+            Não precisa saber o estado atual — simplesmente inverte.
+        </p>
+        <p class="lang-en" style="display:none">
+            <strong style="color:#fff">Pattern:</strong> use XOR with the mask. XOR with
+            <code>1</code> flips the target bit, and XOR with <code>0</code> preserves it.
+            No need to know the current state — it just flips.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">TOGGLE bit N: reg ^= (1 &lt;&lt; N)</span>
+                <span class="code-lang">c</span>
+            </div>
+<pre><span class="tp">uint8_t</span> reg = <span class="num">0b10110001</span>;   <span class="cm">/* bit 2 = 0 */</span>
+
+reg ^= (<span class="num">1</span> &lt;&lt; <span class="num">2</span>);            <span class="cm">/* toggle bit 2 */</span>
+<span class="cm">/* reg = 0b10110101  — bit 2 flipped from 0 to 1 */</span>
+
+reg ^= (<span class="num">1</span> &lt;&lt; <span class="num">2</span>);            <span class="cm">/* toggle again */</span>
+<span class="cm">/* reg = 0b10110001  — bit 2 flipped back to 0   */</span>
+
+<span class="cm">/* Perfect for blinking an LED: toggle a GPIO bit in a loop */</span>
+<span class="kw">while</span> (<span class="num">1</span>) {
+    LED_PORT ^= (<span class="num">1</span> &lt;&lt; LED_PIN);   <span class="cm">/* flip LED state every iteration */</span>
+    <span class="fn">delay_ms</span>(<span class="num">500</span>);
+}</pre>
+        </div>
+
+        <div class="callout">
+            <p><strong data-pt="// O resumo em 4 linhas — guarde isso" data-en="// The 4-line summary — memorize this">// <span data-pt="O resumo em 4 linhas — guarde isso" data-en="The 4-line summary — memorize this">O resumo em 4 linhas — guarde isso</span></strong></p>
+            <p class="lang-pt">Estes são os padrões universais do mundo embarcado, válidos em qualquer microcontrolador, qualquer compilador, qualquer arquitetura:</p>
+            <p class="lang-en" style="display:none">These are the universal patterns of the embedded world, valid on any microcontroller, any compiler, any architecture:</p>
+        </div>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="os 4 padrões universais" data-en="the 4 universal patterns">the 4 universal patterns</span>
+                <span class="code-lang">c</span>
+            </div>
+<pre><span class="tp">uint8_t</span> reg;
+<span class="tp">uint8_t</span> N = <span class="num">3</span>;   <span class="cm">/* bit position (0 = rightmost, 7 = leftmost) */</span>
+
+reg |=  (<span class="num">1</span> &lt;&lt; N);    <span class="cm">/* SET:    turn bit N ON              */</span>
+reg &amp;= ~(<span class="num">1</span> &lt;&lt; N);    <span class="cm">/* CLEAR:  turn bit N OFF             */</span>
+reg ^=  (<span class="num">1</span> &lt;&lt; N);    <span class="cm">/* TOGGLE: flip bit N                 */</span>
+<span class="kw">if</span> (reg &amp; (<span class="num">1</span> &lt;&lt; N))  <span class="cm">/* CHECK:  is bit N ON? (non-zero=yes) */</span></pre>
+        </div>
+    </section>
+
+    <!-- 04 — EXEMPLO EMBARCADO -->
+    <section class="post-section" id="embarcado">
+        <div class="section-label">04</div>
+        <h2 data-pt="Exemplo Real: 8 sensores industriais em 1 byte"
+            data-en="Real Example: 8 industrial sensors in 1 byte">
+            <span data-pt="Exemplo Real" data-en="Real Example">Exemplo Real</span>: 8 <span data-pt="sensores industriais em 1 byte" data-en="industrial sensors in 1 byte">sensores industriais em 1 byte</span>
+        </h2>
+
+        <p class="lang-pt">
+            Imagine que você está programando o firmware de uma máquina industrial.
+            A máquina tem 8 pontos de status diferentes — sensores e atuadores — todos
+            mapeados em um único registrador de 8 bits. Isso é extremamente comum em
+            hardware embarcado real (GPIO ports, UART status registers, CAN bus flags, etc.).
+        </p>
+        <p class="lang-en" style="display:none">
+            Imagine you are writing firmware for an industrial machine. The machine has 8 different
+            status points — sensors and actuators — all mapped to a single 8-bit register. This is
+            extremely common in real embedded hardware (GPIO ports, UART status registers,
+            CAN bus flags, etc.).
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="mapeamento do registrador de status da máquina" data-en="machine status register map">machine status register map</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  MACHINE_STATUS  (uint8_t at hardware address 0x40)
+
+  Bit:  7          6          5          4          3          2          1          0
+       ┌──────────┬──────────┬──────────┬──────────┬──────────┬──────────┬──────────┬──────────┐
+       │ SYS_READY│  MOTOR   │  ERROR   │   PUMP   │  BYPASS  │  VALVE   │ PRESS_LO │ TEMP_OVR │
+       └──────────┴──────────┴──────────┴──────────┴──────────┴──────────┴──────────┴──────────┘
+            │          │          │          │          │          │          │          │
+            │          │          │          │          │          │          │          └── bit 0: temperature overflow
+            │          │          │          │          │          │          └─────────── bit 1: pressure too low
+            │          │          │          │          │          └────────────────────── bit 2: main valve open
+            │          │          │          │          └───────────────────────────────── bit 3: bypass valve open
+            │          │          │          └──────────────────────────────────────────── bit 4: pump running
+            │          │          └─────────────────────────────────────────────────────── bit 5: critical error
+            │          └────────────────────────────────────────────────────────────────── bit 6: motor enabled
+            └───────────────────────────────────────────────────────────────────────────── bit 7: system ready
+</pre>
+        </div>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">machine_control.c — full embedded example</span>
+                <span class="code-lang">c</span>
+            </div>
+<pre><span class="pp">#include</span> <span class="str">&lt;stdint.h&gt;</span>
+<span class="pp">#include</span> <span class="str">&lt;stdio.h&gt;</span>
+
+<span class="cm">/* ── Bit position definitions ──────────────────────────────────────── */</span>
+<span class="cm">/* Using (1 << N) as masks — self-documenting, error-free                */</span>
+<span class="pp">#define</span> <span class="fn">TEMP_OVERFLOW</span>   (<span class="num">1</span> &lt;&lt; <span class="num">0</span>)  <span class="cm">/* bit 0: temperature sensor alarm  */</span>
+<span class="pp">#define</span> <span class="fn">PRESSURE_LOW</span>    (<span class="num">1</span> &lt;&lt; <span class="num">1</span>)  <span class="cm">/* bit 1: pressure below minimum    */</span>
+<span class="pp">#define</span> <span class="fn">VALVE_MAIN</span>      (<span class="num">1</span> &lt;&lt; <span class="num">2</span>)  <span class="cm">/* bit 2: main valve control        */</span>
+<span class="pp">#define</span> <span class="fn">VALVE_BYPASS</span>    (<span class="num">1</span> &lt;&lt; <span class="num">3</span>)  <span class="cm">/* bit 3: bypass valve control      */</span>
+<span class="pp">#define</span> <span class="fn">PUMP_RUNNING</span>    (<span class="num">1</span> &lt;&lt; <span class="num">4</span>)  <span class="cm">/* bit 4: pump is active            */</span>
+<span class="pp">#define</span> <span class="fn">ERROR_CRITICAL</span>  (<span class="num">1</span> &lt;&lt; <span class="num">5</span>)  <span class="cm">/* bit 5: unrecoverable fault       */</span>
+<span class="pp">#define</span> <span class="fn">MOTOR_ENABLED</span>   (<span class="num">1</span> &lt;&lt; <span class="num">6</span>)  <span class="cm">/* bit 6: motor enable line         */</span>
+<span class="pp">#define</span> <span class="fn">SYSTEM_READY</span>    (<span class="num">1</span> &lt;&lt; <span class="num">7</span>)  <span class="cm">/* bit 7: all subsystems go         */</span>
+
+<span class="cm">/* volatile: tells compiler this can change outside our code (hardware) */</span>
+<span class="kw">volatile</span> <span class="tp">uint8_t</span> machine_status = <span class="num">0x00</span>;  <span class="cm">/* start: all OFF                 */</span>
+
+<span class="tp">void</span> <span class="fn">startup_sequence</span>(<span class="tp">void</span>) {
+    <span class="cm">/* Step 1: system booted — set SYSTEM_READY */</span>
+    machine_status |= <span class="fn">SYSTEM_READY</span>;
+    <span class="cm">/* status = 0b10000000 */</span>
+
+    <span class="cm">/* Step 2: enable the motor */</span>
+    machine_status |= <span class="fn">MOTOR_ENABLED</span>;
+    <span class="cm">/* status = 0b11000000 */</span>
+
+    <span class="cm">/* Step 3: start the pump */</span>
+    machine_status |= <span class="fn">PUMP_RUNNING</span>;
+    <span class="cm">/* status = 0b11010000 */</span>
+
+    <span class="cm">/* Step 4: open main valve */</span>
+    machine_status |= <span class="fn">VALVE_MAIN</span>;
+    <span class="cm">/* status = 0b11010100 */</span>
+}
+
+<span class="tp">void</span> <span class="fn">safety_check</span>(<span class="tp">void</span>) {
+    <span class="cm">/* Hardware detected temperature overflow — sensor set bit 0 */</span>
+    machine_status |= <span class="fn">TEMP_OVERFLOW</span>;
+    <span class="cm">/* status = 0b11010101 */</span>
+
+    <span class="cm">/* Read the sensor flags and react */</span>
+    <span class="kw">if</span> (machine_status &amp; <span class="fn">TEMP_OVERFLOW</span>) {
+        <span class="fn">printf</span>(<span class="str">"[ALARM] Temperature overflow detected!\n"</span>);
+
+        <span class="cm">/* Emergency: close main valve, open bypass */</span>
+        machine_status &amp;= ~<span class="fn">VALVE_MAIN</span>;   <span class="cm">/* CLEAR valve_main    */</span>
+        machine_status |=  <span class="fn">VALVE_BYPASS</span>;  <span class="cm">/* SET   valve_bypass  */</span>
+        <span class="cm">/* status = 0b11011001 */</span>
+
+        <span class="cm">/* If pressure also low: critical fault */</span>
+        <span class="kw">if</span> (machine_status &amp; <span class="fn">PRESSURE_LOW</span>) {
+            machine_status |=  <span class="fn">ERROR_CRITICAL</span>;  <span class="cm">/* SET error flag    */</span>
+            machine_status &amp;= ~<span class="fn">MOTOR_ENABLED</span>;   <span class="cm">/* CLEAR motor       */</span>
+            machine_status &amp;= ~<span class="fn">PUMP_RUNNING</span>;    <span class="cm">/* CLEAR pump        */</span>
+        }
+    }
+}
+
+<span class="tp">void</span> <span class="fn">print_status</span>(<span class="tp">uint8_t</span> s) {
+    <span class="fn">printf</span>(<span class="str">"STATUS: [%c%c%c%c%c%c%c%c] = 0x%02X\n"</span>,
+        (s &amp; <span class="fn">SYSTEM_READY</span>)   ? <span class="str">'R'</span> : <span class="str">'.'</span>,   <span class="cm">/* R = ready */</span>
+        (s &amp; <span class="fn">MOTOR_ENABLED</span>)  ? <span class="str">'M'</span> : <span class="str">'.'</span>,   <span class="cm">/* M = motor */</span>
+        (s &amp; <span class="fn">ERROR_CRITICAL</span>) ? <span class="str">'E'</span> : <span class="str">'.'</span>,   <span class="cm">/* E = error */</span>
+        (s &amp; <span class="fn">PUMP_RUNNING</span>)   ? <span class="str">'P'</span> : <span class="str">'.'</span>,   <span class="cm">/* P = pump  */</span>
+        (s &amp; <span class="fn">VALVE_BYPASS</span>)   ? <span class="str">'B'</span> : <span class="str">'.'</span>,   <span class="cm">/* B = bypass*/</span>
+        (s &amp; <span class="fn">VALVE_MAIN</span>)     ? <span class="str">'V'</span> : <span class="str">'.'</span>,   <span class="cm">/* V = valve */</span>
+        (s &amp; <span class="fn">PRESSURE_LOW</span>)   ? <span class="str">'L'</span> : <span class="str">'.'</span>,   <span class="cm">/* L = low P */</span>
+        (s &amp; <span class="fn">TEMP_OVERFLOW</span>)  ? <span class="str">'T'</span> : <span class="str">'.'</span>,   <span class="cm">/* T = temp  */</span>
+        s);
+}
+
+<span class="tp">int</span> <span class="fn">main</span>(<span class="tp">void</span>) {
+    <span class="fn">printf</span>(<span class="str">"Initial:  "</span>); <span class="fn">print_status</span>(machine_status);
+
+    <span class="fn">startup_sequence</span>();
+    <span class="fn">printf</span>(<span class="str">"Started:  "</span>); <span class="fn">print_status</span>(machine_status);
+
+    <span class="fn">safety_check</span>();
+    <span class="fn">printf</span>(<span class="str">"Fault:    "</span>); <span class="fn">print_status</span>(machine_status);
+
+    <span class="kw">return</span> <span class="num">0</span>;
+}</pre>
+        </div>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="saída do programa e estado bit a bit" data-en="program output and bit-by-bit state">program output and bit-by-bit state</span>
+                <span class="code-lang">shell</span>
+            </div>
+<pre>$ ./machine_control
+Initial:  STATUS: [........] = 0x00   ← all systems off
+Started:  STATUS: [RM.PV...] = 0xD4   ← ready, motor, pump, valve on
+[ALARM] Temperature overflow detected!
+Fault:    STATUS: [RM.PBT..] = 0xDB   ← valve closed, bypass open, temp flag
+
+<span class="cm">  Started:  1  1  0  1  0  1  0  0  = 0xD4</span>
+<span class="cm">  Bits:     R  M  .  P  .  V  .  .</span>
+<span class="cm">                           ↑</span>
+<span class="cm">                       VALVE_MAIN bit 2 = 1 (open)</span>
+
+<span class="cm">  After fault: 1  1  0  1  1  0  1  1  = 0xDB</span>
+<span class="cm">  Bits:        R  M  .  P  B  .  .  T</span>
+<span class="cm">                           ↑  ↑       ↑</span>
+<span class="cm">               bypass OPEN ┘  │       └── TEMP alarm ON</span>
+<span class="cm">               valve CLOSED   └── BYPASS_VALVE bit 3 = 1</span></pre>
+        </div>
+
+        <div class="callout">
+            <p><strong data-pt="// Você acaba de ler e escrever um registrador de hardware" data-en="// You just read and wrote a hardware register">// <span data-pt="Você acaba de ler e escrever um registrador de hardware" data-en="You just read and wrote a hardware register">Você acaba de ler e escrever um registrador de hardware</span></strong></p>
+            <p class="lang-pt">Em um microcontrolador real (ATmega, STM32, ESP32), a única diferença
+            seria que <code>machine_status</code> seria substituído pelo endereço físico de um
+            registrador de hardware real — como <code>PORTB</code> ou
+            <code>*(volatile uint8_t*)0x40020014</code>. Os padrões de bit manipulation são
+            exatamente os mesmos. Você já escreve firmware.</p>
+            <p class="lang-en" style="display:none">On a real microcontroller (ATmega, STM32, ESP32),
+            the only difference would be that <code>machine_status</code> would be replaced with the
+            physical address of a real hardware register — like <code>PORTB</code> or
+            <code>*(volatile uint8_t*)0x40020014</code>. The bit manipulation patterns are exactly
+            the same. You are already writing firmware.</p>
+        </div>
+
+        <h3>// <span data-pt="Bônus: múltiplos bits de uma vez" data-en="Bonus: multiple bits at once">Bônus: <span data-pt="múltiplos bits de uma vez" data-en="multiple bits at once">múltiplos bits de uma vez</span></span></h3>
+
+        <p class="lang-pt">
+            Os padrões funcionam igualmente para múltiplos bits simultâneos — basta combinar
+            as máscaras com OR antes de aplicar a operação.
+        </p>
+        <p class="lang-en" style="display:none">
+            The patterns work equally well for multiple bits at once — just combine the masks with
+            OR before applying the operation.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">operating on multiple bits simultaneously</span>
+                <span class="code-lang">c</span>
+            </div>
+<pre><span class="cm">/* SET both PUMP and MOTOR at the same time */</span>
+machine_status |= (PUMP_RUNNING | MOTOR_ENABLED);
+
+<span class="cm">/* CLEAR both valves at the same time */</span>
+machine_status &amp;= ~(VALVE_MAIN | VALVE_BYPASS);
+
+<span class="cm">/* CHECK if BOTH temp AND pressure alarms are active */</span>
+<span class="kw">if</span> ((machine_status &amp; (TEMP_OVERFLOW | PRESSURE_LOW)) ==
+                       (TEMP_OVERFLOW | PRESSURE_LOW)) {
+    <span class="fn">printf</span>(<span class="str">"Both alarms active — critical shutdown!\n"</span>);
+}
+
+<span class="cm">/* CHECK if EITHER alarm is active */</span>
+<span class="kw">if</span> (machine_status &amp; (TEMP_OVERFLOW | PRESSURE_LOW)) {
+    <span class="fn">printf</span>(<span class="str">"At least one alarm is active.\n"</span>);
+}</pre>
+        </div>
+    </section>
+
+    <div class="post-nav">
+        <a href="../posts.html">
+            <i class='bx bx-arrow-back'></i>
+            <span data-pt="Voltar aos posts" data-en="Back to posts">Voltar aos posts</span>
+        </a>
+        <a href="memory-alignment.html">
+            <span data-pt="Ver: Alignment & Struct Padding →" data-en="See: Alignment & Struct Padding →">Ver: Alignment & Struct Padding →</span>
+        </a>
+    </div>
+
+</article>
+</main>
+
+<footer>
+    <p>&copy; 2026 Robert Souza Lages.</p>
+</footer>
+
+<script>
+    let currentLang = localStorage.getItem('lang') || 'pt';
+
+    function setLang(lang) {
+        currentLang = lang;
+        localStorage.setItem('lang', lang);
+        document.querySelectorAll('[data-pt], [data-en]').forEach(el => {
+            const val = el.getAttribute('data-' + lang);
+            if (val !== null) el.textContent = val;
+        });
+        document.querySelectorAll('.lang-pt').forEach(el => el.style.display = lang === 'pt' ? '' : 'none');
+        document.querySelectorAll('.lang-en').forEach(el => el.style.display = lang === 'en' ? '' : 'none');
+        document.documentElement.lang = lang === 'pt' ? 'pt-BR' : 'en';
+        document.querySelectorAll('.lang-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.id === 'btn-' + lang);
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        document.body.addEventListener('click', (e) => {
+            const btn = e.target.closest('.lang-btn');
+            if (btn && btn.id) setLang(btn.id.replace('btn-', ''));
+        });
+        const hamburger = document.querySelector('.hamburger');
+        const navLinks  = document.querySelector('.nav-links');
+        if (hamburger) hamburger.addEventListener('click', () => navLinks.classList.toggle('active'));
+        setLang(currentLang);
+    });
+</script>
+
+</body>
+</html>

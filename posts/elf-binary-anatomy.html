@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Anatomy of a Binary: ELF Format & Process Memory Layout | Robert Souza Lages</title>
+    <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+    <link rel="stylesheet" href="style.css">
+    <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
+</head>
+<body>
+
+<nav class="navbar">
+    <div class="logo"><span>0x</span>Robert<span>_</span></div>
+    <ul class="nav-links">
+        <li><a href="../index.html"    data-pt="Sobre"    data-en="About">Sobre</a></li>
+        <li><a href="../resume.html"   data-pt="Currículo" data-en="Resume">Currículo</a></li>
+        <li><a href="../projects.html" data-pt="Projetos"  data-en="Projects">Projetos</a></li>
+        <li><a href="../posts.html" class="active">Posts</a></li>
+    </ul>
+    <div class="navbar-right">
+        <div class="lang-toggle">
+            <button class="lang-btn active" id="btn-pt">PT</button>
+            <button class="lang-btn"        id="btn-en">EN</button>
+        </div>
+        <div class="hamburger"><i class='bx bx-menu'></i></div>
+    </div>
+</nav>
+
+<main>
+<article class="post-wrapper">
+
+    <header class="post-header">
+        <div class="post-breadcrumb">
+            <a href="../posts.html">posts</a><span>/</span><span>elf-binary-anatomy</span>
+        </div>
+        <div class="post-meta">
+            <span class="post-tag">LOW-LEVEL</span>
+            <span class="post-tag">LINKER</span>
+            <span class="post-tag">OS INTERNALS</span>
+            <time class="post-date" datetime="2026-05-26">2026-05-26</time>
+        </div>
+        <h1 class="post-title">
+            <span data-pt="A Anatomia de um Binário:" data-en="The Anatomy of a Binary:">A Anatomia de um Binário:</span><br>
+            <span data-pt="ELF Format & Process Memory Layout" data-en="ELF Format & Process Memory Layout">ELF Format & Process Memory Layout</span>
+        </h1>
+        <p class="post-summary lang-pt">
+            Compilar código não cria bytes mágicos — cria um contrato estruturado entre o compilador,
+            o linker, o loader do sistema operacional e o hardware. Este post disseca o formato ELF
+            seção por seção, rastreia cada variável C até sua região de memória correspondente e
+            explica por que as permissões de cada segmento importam para a segurança do sistema.
+        </p>
+        <p class="post-summary lang-en" style="display:none">
+            Compiling code doesn't create magic bytes — it creates a structured contract between the
+            compiler, linker, OS loader, and hardware. This post dissects the ELF format section by
+            section, traces every C variable to its corresponding memory region, and explains why
+            each segment's permissions are a matter of system security.
+        </p>
+
+        <div class="toc lang-pt">
+            <div class="toc-title">// ÍNDICE</div>
+            <ol>
+                <li><a href="#contrato">O Contrato Binário: o que é um ELF</a></li>
+                <li><a href="#secoes">Seções: a Visão do Linker</a></li>
+                <li><a href="#segmentos">Segmentos: a Visão do Loader</a></li>
+                <li><a href="#exemplo">C → Memória: rastreando variáveis com readelf e nm</a></li>
+                <li><a href="#seguranca">Permissões, W^X e a Cadeia de Segurança</a></li>
+            </ol>
+        </div>
+        <div class="toc lang-en" style="display:none">
+            <div class="toc-title">// TABLE OF CONTENTS</div>
+            <ol>
+                <li><a href="#contrato">The Binary Contract: what is an ELF</a></li>
+                <li><a href="#secoes">Sections: the Linker's View</a></li>
+                <li><a href="#segmentos">Segments: the Loader's View</a></li>
+                <li><a href="#exemplo">C → Memory: tracing variables with readelf and nm</a></li>
+                <li><a href="#seguranca">Permissions, W^X and the Security Chain</a></li>
+            </ol>
+        </div>
+    </header>
+
+    <!-- 01 — O CONTRATO -->
+    <section class="post-section" id="contrato">
+        <div class="section-label">01</div>
+        <h2 data-pt="O Contrato Binário: o que é um ELF"
+            data-en="The Binary Contract: what is an ELF">
+            <span data-pt="O Contrato Binário" data-en="The Binary Contract">O Contrato Binário</span>
+        </h2>
+
+        <p class="lang-pt">
+            Quando você digita <code>gcc -o program main.c</code>, o compilador não produz
+            uma sequência arbitrária de bytes de máquina. Ele produz um arquivo no formato
+            <strong style="color:#fff">ELF</strong> (Executable and Linkable Format) —
+            um contrato preciso que especifica ao kernel exatamente como o programa deve
+            ser carregado, quais regiões precisam de quais permissões, e qual instrução
+            deve ser executada primeiro.
+        </p>
+        <p class="lang-en" style="display:none">
+            When you type <code>gcc -o program main.c</code>, the compiler doesn't produce an
+            arbitrary sequence of machine bytes. It produces a file in
+            <strong style="color:#fff">ELF</strong> (Executable and Linkable Format) —
+            a precise contract that tells the kernel exactly how to load the program, which
+            regions need which permissions, and which instruction must execute first.
+        </p>
+
+        <p class="lang-pt">
+            O ELF é o formato padrão em sistemas Linux, BSD e praticamente todo sistema
+            Unix-like moderno. Ele é usado para três tipos de objeto distintos: executáveis
+            (<code>ET_EXEC</code> / <code>ET_DYN</code> para PIE), objetos relocáveis
+            (<code>ET_REL</code>, os arquivos <code>.o</code> gerados pelo compilador) e
+            shared libraries (<code>ET_DYN</code>).
+        </p>
+        <p class="lang-en" style="display:none">
+            ELF is the standard format on Linux, BSD, and virtually every modern Unix-like
+            system. It is used for three distinct object types: executables (<code>ET_EXEC</code>
+            / <code>ET_DYN</code> for PIE), relocatable objects (<code>ET_REL</code>, the
+            <code>.o</code> files produced by the compiler), and shared libraries
+            (<code>ET_DYN</code>).
+        </p>
+
+        <h3>// <span data-pt="O cabeçalho ELF: os primeiros 64 bytes" data-en="The ELF header: the first 64 bytes">O cabeçalho ELF: os primeiros 64 bytes</span></h3>
+
+        <p class="lang-pt">
+            Todo arquivo ELF começa com um cabeçalho fixo de 64 bytes (em 64-bit). Os primeiros
+            4 bytes são os <em>magic bytes</em> — <code>0x7F 'E' 'L' 'F'</code> — que permitem
+            ao kernel identificar o tipo de arquivo instantaneamente, antes de qualquer parsing.
+            O restante do cabeçalho descreve a arquitetura alvo, os offsets das tabelas internas
+            e o endereço virtual do ponto de entrada.
+        </p>
+        <p class="lang-en" style="display:none">
+            Every ELF file starts with a fixed 64-byte header (in 64-bit). The first 4 bytes are
+            the <em>magic bytes</em> — <code>0x7F 'E' 'L' 'F'</code> — allowing the kernel to
+            identify the file type instantly, before any further parsing. The rest of the header
+            describes the target architecture, offsets of internal tables, and the virtual address
+            of the entry point.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">ELF64 header layout (Elf64_Ehdr)</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  Offset  Size  Field          Value / Meaning
+  ──────  ────  ─────────────  ──────────────────────────────────────────────
+  0x00     4    e_ident[0..3]  7f 45 4c 46  →  magic: "\x7fELF"
+  0x04     1    e_ident[4]     02           →  EI_CLASS:   ELFCLASS64 (64-bit)
+  0x05     1    e_ident[5]     01           →  EI_DATA:    ELFDATA2LSB (little-endian)
+  0x06     1    e_ident[6]     01           →  EI_VERSION: EV_CURRENT
+  0x07     1    e_ident[7]     00           →  EI_OSABI:   ELFOSABI_NONE (System V)
+  0x10     2    e_type         02 00        →  ET_EXEC (executable) | 03=ET_DYN (PIE/so)
+  0x12     2    e_machine      3e 00        →  EM_X86_64
+  0x18     8    e_entry        &lt;addr&gt;       →  virtual address of _start (NOT main!)
+  0x20     8    e_phoff        &lt;offset&gt;     →  offset of Program Header Table in file
+  0x28     8    e_shoff        &lt;offset&gt;     →  offset of Section Header Table in file
+  0x30     4    e_flags        00 00 00 00  →  processor-specific flags (none for x86_64)
+  0x34     2    e_ehsize       40 00        →  size of this header = 64 bytes
+  0x36     2    e_phentsize    38 00        →  size of one Program Header entry = 56 bytes
+  0x38     2    e_phnum        &lt;N&gt;          →  number of Program Header entries
+  0x3a     2    e_shentsize    40 00        →  size of one Section Header entry = 64 bytes
+  0x3c     2    e_shnum        &lt;N&gt;          →  number of Section Header entries
+  0x3e     2    e_shstrndx     &lt;N&gt;          →  section index of .shstrtab (section name strings)
+</pre>
+        </div>
+
+        <div class="callout">
+            <p><strong data-pt="e_entry aponta para _start, não para main()" data-en="e_entry points to _start, not main()">e_entry <span data-pt="aponta para" data-en="points to">aponta para</span> <code>_start</code>, <span data-pt="não para" data-en="not">não para</span> <code>main()</code></strong></p>
+            <p class="lang-pt">O ponto de entrada do processo é <code>_start</code>, fornecido pela
+            libc (<code>crt1.o</code>). Ele inicializa o runtime C — configura o frame inicial,
+            lê <code>argc</code>/<code>argv</code>/<code>envp</code> da stack, chama
+            <code>__libc_start_main()</code>, que por sua vez chama <code>main()</code>. Quando
+            <code>main()</code> retorna, <code>__libc_start_main()</code> chama <code>exit()</code>.
+            O kernel nunca "vê" <code>main()</code> — ele só conhece <code>e_entry</code>.</p>
+            <p class="lang-en" style="display:none">The process entry point is <code>_start</code>,
+            provided by the libc (<code>crt1.o</code>). It initializes the C runtime — sets up the
+            initial frame, reads <code>argc</code>/<code>argv</code>/<code>envp</code> from the
+            stack, calls <code>__libc_start_main()</code>, which in turn calls <code>main()</code>.
+            When <code>main()</code> returns, <code>__libc_start_main()</code> calls
+            <code>exit()</code>. The kernel never "sees" <code>main()</code> — it only knows
+            <code>e_entry</code>.</p>
+        </div>
+    </section>
+
+    <!-- 02 — SEÇÕES -->
+    <section class="post-section" id="secoes">
+        <div class="section-label">02</div>
+        <h2 data-pt="Seções: a Visão do Linker"
+            data-en="Sections: the Linker's View">
+            <span data-pt="Seções: a Visão do Linker" data-en="Sections: the Linker's View">Seções: a Visão do Linker</span>
+        </h2>
+
+        <p class="lang-pt">
+            As <strong style="color:#fff">seções</strong> são a unidade de organização do linker.
+            Cada seção agrupa um tipo específico de dados ou código e carrega metadados sobre
+            endereço, tamanho, tipo e flags de permissão. O linker as usa para construir
+            o executável final; o loader as usa (via segmentos) para mapear o arquivo em memória.
+        </p>
+        <p class="lang-en" style="display:none">
+            <strong style="color:#fff">Sections</strong> are the linker's unit of organization.
+            Each section groups a specific type of data or code and carries metadata about address,
+            size, type, and permission flags. The linker uses them to construct the final executable;
+            the loader uses them (via segments) to map the file into memory.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="principais seções e o que pertence a cada uma" data-en="key sections and what belongs in each">principais seções e o que pertence a cada uma</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  Section     Type       Flags  Contents
+  ─────────── ────────── ─────  ──────────────────────────────────────────────────────
+  .text       PROGBITS   AX     Compiled machine code (function bodies)
+  .rodata     PROGBITS   A      Read-only data: string literals, const global arrays,
+                                switch jump tables, floating-point constants
+  .data       PROGBITS   WA     Initialized global/static variables (non-zero at startup)
+  .bss        NOBITS     WA     Uninitialized global/static variables — zero-filled at
+                                runtime; occupies NO space on disk (NOBITS!)
+  .plt        PROGBITS   AX     Procedure Linkage Table: stubs for lazy dynamic linking
+  .got        PROGBITS   WA     Global Offset Table: resolved symbol addresses (runtime)
+  .got.plt    PROGBITS   WA     GOT entries for PLT (filled in by dynamic linker)
+  .dynamic    DYNAMIC    WA     Dynamic linking metadata (DT_NEEDED, DT_SYMTAB, etc.)
+  .symtab     SYMTAB     —      Full symbol table (stripped in release builds)
+  .dynsym     DYNSYM     A      Minimal symbol table for dynamic linking (kept always)
+  .strtab     STRTAB     —      String table for .symtab symbol names
+  .dynstr     STRTAB     A      String table for .dynsym symbol names
+  .rela.text  RELA       —      Relocation entries for code section (applied by linker)
+  .eh_frame   PROGBITS   A      DWARF unwind tables (used by C++ exceptions, gdb)
+  .shstrtab   STRTAB     —      Section name strings (the "index" of sections)
+
+  Flags:  A = Allocated (mapped into memory)
+          X = Executable
+          W = Writable
+          — = Not mapped (debug/link-time only)
+</pre>
+        </div>
+
+        <h3>// .bss — <span data-pt="sem espaço em disco" data-en="no disk space consumed">sem espaço em disco</span></h3>
+
+        <p class="lang-pt">
+            A seção <code>.bss</code> (<em>Block Started by Symbol</em>) é o detalhe mais
+            contra-intuitivo do formato ELF. Variáveis globais não-inicializadas são garantidas
+            de serem zero pelo padrão C. Em vez de armazenar megabytes de zeros no arquivo
+            binário, o linker simplesmente registra o <em>tamanho</em> que <code>.bss</code>
+            precisa ter. O kernel, ao carregar o programa, mapeia essa região como páginas
+            anônimas zero-filled via <code>mmap(MAP_ANONYMOUS)</code>. O resultado é um
+            executável menor no disco e o mesmo comportamento em runtime.
+        </p>
+        <p class="lang-en" style="display:none">
+            The <code>.bss</code> section (<em>Block Started by Symbol</em>) is the most
+            counter-intuitive detail of the ELF format. Uninitialized global variables are
+            guaranteed to be zero by the C standard. Rather than storing megabytes of zeros
+            in the binary file, the linker simply records the <em>size</em> that <code>.bss</code>
+            needs. When loading the program, the kernel maps that region as anonymous zero-filled
+            pages via <code>mmap(MAP_ANONYMOUS)</code>. The result is a smaller on-disk binary
+            with identical runtime behavior.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">size output: disk vs memory footprint</span>
+                <span class="code-lang">shell</span>
+            </div>
+<pre><span class="cm"># 'size' shows section contributions to memory image</span>
+$ size example
+   text    data     bss     dec     hex filename
+   1909     616    1032    3557     de5 example
+
+<span class="cm"># .bss is 1032 bytes — none of those bytes exist on disk.</span>
+<span class="cm"># They are allocated at load time as zero pages by the kernel.</span>
+$ ls -la example
+-rwxr-xr-x 1 user user 15832 May 26 09:00 example
+<span class="cm"># The .bss contribution to the file is exactly 0 bytes.</span></pre>
+        </div>
+
+        <h3>// <span data-pt=".rodata vs .data — a distinção que o compilador impõe" data-en=".rodata vs .data — the distinction the compiler enforces">.rodata vs .data</span></h3>
+
+        <p class="lang-pt">
+            A distinção entre <code>.rodata</code> e <code>.data</code> existe para que o kernel
+            possa mapear literais de string e constantes em páginas somente-leitura. Tentar
+            escrever em <code>.rodata</code> via um ponteiro gera um <code>SIGSEGV</code> imediato
+            — não porque o compilador checou algo, mas porque a própria página de memória não
+            tem o bit de escrita habilitado na PTE. É a MMU fazendo o enforcement.
+        </p>
+        <p class="lang-en" style="display:none">
+            The distinction between <code>.rodata</code> and <code>.data</code> exists so the kernel
+            can map string literals and constants into read-only pages. Attempting to write to
+            <code>.rodata</code> via a pointer produces an immediate <code>SIGSEGV</code> — not
+            because the compiler checked anything, but because the memory page itself does not have
+            the write bit set in the PTE. It is the MMU doing the enforcement.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">rodata write fault — runtime, not compile-time</span>
+                <span class="code-lang">c</span>
+            </div>
+<pre><span class="kw">const</span> <span class="tp">char</span> *msg = <span class="str">"hello"</span>;  <span class="cm">/* ptr in .data, string literal in .rodata */</span>
+
+<span class="cm">/* This compiles fine with a cast — the compiler cannot always detect it */</span>
+((<span class="tp">char</span> *)msg)[<span class="num">0</span>] = <span class="str">'H'</span>;
+<span class="cm">/* SIGSEGV at runtime: write to read-only page (PTE.W = 0)              */</span>
+<span class="cm">/* Reported by kernel as: signal 11 (SIGSEGV), si_code=SEGV_ACCERR     */</span></pre>
+        </div>
+    </section>
+
+    <!-- 03 — SEGMENTOS -->
+    <section class="post-section" id="segmentos">
+        <div class="section-label">03</div>
+        <h2 data-pt="Segmentos: a Visão do Loader"
+            data-en="Segments: the Loader's View">
+            <span data-pt="Segmentos: a Visão do Loader" data-en="Segments: the Loader's View">Segmentos: a Visão do Loader</span>
+        </h2>
+
+        <p class="lang-pt">
+            As seções existem para o linker. Os <strong style="color:#fff">segmentos</strong>
+            (definidos pelos Program Headers) existem para o loader. A diferença é fundamental:
+            seções são granulares e detalhadas; segmentos são coarsos e orientados ao mapeamento
+            de memória. O loader do kernel não processa seções individuais — ele itera sobre
+            os Program Headers e chama <code>mmap()</code> para cada segmento do tipo
+            <code>PT_LOAD</code>.
+        </p>
+        <p class="lang-en" style="display:none">
+            Sections exist for the linker. <strong style="color:#fff">Segments</strong>
+            (defined by Program Headers) exist for the loader. The difference is fundamental:
+            sections are granular and detailed; segments are coarse and oriented toward memory
+            mapping. The kernel loader does not process individual sections — it iterates over
+            the Program Headers and calls <code>mmap()</code> for each <code>PT_LOAD</code>
+            segment.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">readelf -l example — Program Headers (segments)</span>
+                <span class="code-lang">shell</span>
+            </div>
+<pre>$ readelf -l example
+
+Elf file type is EXEC (Executable file)
+Entry point 0x401060
+There are 11 program headers, starting at offset 64
+
+Program Headers:
+  Type           Offset   VirtAddr           PhysAddr           FileSiz  MemSiz   Flg Align
+  PHDR           0x000040 0x0000000000400040 0x0000000000400040 0x000268 0x000268 R   0x8
+  INTERP         0x0002a8 0x00000000004002a8 0x00000000004002a8 0x00001c 0x00001c R   0x1
+      [Requesting program interpreter: /lib64/ld-linux-x86-64.so.2]
+  LOAD           0x000000 0x0000000000400000 0x0000000000400000 0x000528 0x000528 R   0x1000
+  LOAD           0x001000 0x0000000000401000 0x0000000000401000 0x0001c5 0x0001c5 R E 0x1000
+  LOAD           0x002000 0x0000000000402000 0x0000000000402000 0x000128 0x000128 R   0x1000
+  LOAD           0x002e10 0x0000000000403e10 0x0000000000403e10 0x000228 0x000630 RW  0x1000
+  DYNAMIC        0x002e20 0x0000000000403e20 0x0000000000403e20 0x0001d0 0x0001d0 RW  0x8
+  NOTE           0x0002c4 0x00000000004002c4 0x00000000004002c4 0x000044 0x000044 R   0x4
+  GNU_EH_FRAME   0x002018 0x0000000000402018 0x0000000000402018 0x000044 0x000044 R   0x4
+  GNU_STACK      0x000000 0x0000000000000000 0x0000000000000000 0x000000 0x000000 RW  0x10
+  GNU_RELRO      0x002e10 0x0000000000403e10 0x0000000000403e10 0x0001f0 0x0001f0 R   0x1
+
+ Section to Segment mapping:
+  Segment Sections...
+   00
+   01     .interp
+   02     .interp .note.ABI-tag .note.gnu.build-id .gnu.hash .dynsym .dynstr .rela.dyn .rela.plt
+   03     .init .plt .text .fini
+   04     .rodata .eh_frame_hdr .eh_frame
+   05     .init_array .fini_array .dynamic .got .got.plt .data .bss
+   06     .dynamic
+   07     .note.ABI-tag .note.gnu.build-id
+   08     .eh_frame_hdr
+   09
+   10     .init_array .fini_array .dynamic .got</pre>
+        </div>
+
+        <h3>// <span data-pt="O que o kernel faz com cada PT_LOAD" data-en="What the kernel does with each PT_LOAD">O que o kernel faz com cada PT_LOAD</span></h3>
+
+        <p class="lang-pt">
+            Para cada segmento <code>PT_LOAD</code>, o kernel executa essencialmente:
+        </p>
+        <p class="lang-en" style="display:none">
+            For each <code>PT_LOAD</code> segment, the kernel essentially executes:
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">kernel ELF loader — simplified mmap per PT_LOAD</span>
+                <span class="code-lang">c</span>
+            </div>
+<pre><span class="cm">/* For each PT_LOAD segment in the program header table: */</span>
+<span class="kw">for</span> (<span class="tp">int</span> i = <span class="num">0</span>; i &lt; ehdr.e_phnum; i++) {
+    <span class="kw">if</span> (phdr[i].p_type != <span class="fn">PT_LOAD</span>) <span class="kw">continue</span>;
+
+    <span class="tp">int</span> prot = <span class="num">0</span>;
+    <span class="kw">if</span> (phdr[i].p_flags & <span class="fn">PF_R</span>) prot |= <span class="fn">PROT_READ</span>;
+    <span class="kw">if</span> (phdr[i].p_flags & <span class="fn">PF_W</span>) prot |= <span class="fn">PROT_WRITE</span>;
+    <span class="kw">if</span> (phdr[i].p_flags & <span class="fn">PF_X</span>) prot |= <span class="fn">PROT_EXEC</span>;
+
+    <span class="cm">/* Map the file content (FileSiz) at the virtual address */</span>
+    <span class="fn">mmap</span>(phdr[i].p_vaddr,          <span class="cm">/* virtual address (page-aligned) */</span>
+         phdr[i].p_filesz,         <span class="cm">/* bytes to copy from file        */</span>
+         prot,
+         <span class="fn">MAP_PRIVATE</span> | <span class="fn">MAP_FIXED</span>,
+         elf_fd,                   <span class="cm">/* file descriptor of the binary  */</span>
+         phdr[i].p_offset);        <span class="cm">/* offset within the ELF file     */</span>
+
+    <span class="cm">/* If MemSiz > FileSiz, the remainder is .bss — map as zero pages */</span>
+    <span class="kw">if</span> (phdr[i].p_memsz > phdr[i].p_filesz) {
+        <span class="tp">size_t</span> bss_size = phdr[i].p_memsz - phdr[i].p_filesz;
+        <span class="fn">mmap</span>(phdr[i].p_vaddr + phdr[i].p_filesz,
+             bss_size,
+             prot,
+             <span class="fn">MAP_PRIVATE</span> | <span class="fn">MAP_FIXED</span> | <span class="fn">MAP_ANONYMOUS</span>,  <span class="cm">/* zero-filled */</span>
+             <span class="num">-1</span>, <span class="num">0</span>);
+    }
+}</pre>
+        </div>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="mapa de memória virtual do processo em execução" data-en="running process virtual memory map">mapa de memória virtual do processo em execução</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  Virtual Address Space after execve() + dynamic linker
+  ─────────────────────────────────────────────────────────────────────
+
+  0x0000000000400000  ┌─────────────────────────────────────────────┐
+                      │  LOAD #1  [R--]  ELF headers + metadata     │ ← read-only
+  0x0000000000401000  ├─────────────────────────────────────────────┤
+                      │  LOAD #2  [R-X]  .text  .init  .plt         │ ← code (RX, not W)
+  0x0000000000402000  ├─────────────────────────────────────────────┤
+                      │  LOAD #3  [R--]  .rodata  .eh_frame         │ ← read-only data
+  0x0000000000403000  ├─────────────────────────────────────────────┤
+                      │  LOAD #4  [RW-]  .data  .bss  .got          │ ← read-write data
+  0x0000000000404000  ├─────────────────────────────────────────────┤
+                      │                                             │
+                      │              (unmapped gap)                 │
+                      │                                             │
+  0x00007f...         ├─────────────────────────────────────────────┤
+                      │  libc.so.6  [R--]  ELF headers              │
+                      │  libc.so.6  [R-X]  .text                    │ ← shared library code
+                      │  libc.so.6  [R--]  .rodata                  │
+                      │  libc.so.6  [RW-]  .data  .bss              │
+                      │  ld-linux.so.2     (dynamic linker itself)  │
+                      │                                             │
+  0x00007fff...       ├─────────────────────────────────────────────┤
+                      │  [RW-]  Stack  (grows ↓)                    │
+  0xffff800000000000  ├─────────────────────────────────────────────┤
+                      │  kernel space (inaccessible from ring 3)    │
+                      └─────────────────────────────────────────────┘
+</pre>
+        </div>
+
+        <div class="callout warn">
+            <p><strong data-pt="PT_INTERP: o loader antes do loader" data-en="PT_INTERP: the loader before the loader">PT_INTERP: <span data-pt="o loader antes do loader" data-en="the loader before the loader">o loader antes do loader</span></strong></p>
+            <p class="lang-pt">O segmento <code>PT_INTERP</code> contém o path do dynamic linker
+            (<code>/lib64/ld-linux-x86-64.so.2</code>). Quando o kernel detecta esse segmento,
+            ele <em>não</em> salta para <code>e_entry</code> diretamente. Ele primeiro carrega e
+            executa o dynamic linker, que então: (1) mapeia todas as shared libraries listadas em
+            <code>DT_NEEDED</code>, (2) resolve símbolos entre elas, (3) aplica relocações,
+            (4) executa os construtores <code>.init_array</code> e finalmente (5) transfere controle
+            para <code>e_entry</code> do executável original. Para um binário estático (compilado
+            com <code>-static</code>), <code>PT_INTERP</code> não existe e o kernel vai direto
+            para <code>e_entry</code>.</p>
+            <p class="lang-en" style="display:none">The <code>PT_INTERP</code> segment contains the
+            path to the dynamic linker (<code>/lib64/ld-linux-x86-64.so.2</code>). When the kernel
+            detects this segment, it does <em>not</em> jump to <code>e_entry</code> directly. It
+            first loads and executes the dynamic linker, which then: (1) maps all shared libraries
+            listed in <code>DT_NEEDED</code>, (2) resolves symbols between them, (3) applies
+            relocations, (4) runs <code>.init_array</code> constructors, and finally (5) transfers
+            control to the original executable's <code>e_entry</code>. For a statically linked binary
+            (<code>-static</code>), <code>PT_INTERP</code> does not exist and the kernel jumps
+            directly to <code>e_entry</code>.</p>
+        </div>
+    </section>
+
+    <!-- 04 — EXEMPLO PRÁTICO -->
+    <section class="post-section" id="exemplo">
+        <div class="section-label">04</div>
+        <h2 data-pt="C → Memória: rastreando variáveis com readelf e nm"
+            data-en="C → Memory: tracing variables with readelf and nm">
+            C → <span data-pt="Memória: rastreando variáveis com readelf e nm" data-en="Memory: tracing variables with readelf and nm">Memória: rastreando variáveis com readelf e nm</span>
+        </h2>
+
+        <p class="lang-pt">
+            O exemplo abaixo foi construído especificamente para colocar ao menos uma variável
+            em cada seção relevante. Compilado com <code>gcc -no-pie -O0</code> para endereços
+            fixos e sem otimizações que eliminariam variáveis não usadas.
+        </p>
+        <p class="lang-en" style="display:none">
+            The example below was specifically constructed to place at least one variable in each
+            relevant section. Compiled with <code>gcc -no-pie -O0</code> for fixed addresses and
+            without optimizations that would eliminate unused variables.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">example.c — one variable per section</span>
+                <span class="code-lang">c</span>
+            </div>
+<pre><span class="pp">#include</span> <span class="str">&lt;stdio.h&gt;</span>
+
+<span class="cm">/* .rodata — read-only data: string literal, never writable */</span>
+<span class="kw">const</span> <span class="tp">char</span> *greeting    = <span class="str">"Hello, ELF!"</span>;
+
+<span class="cm">/* .data — initialized global: has a non-zero value at startup */</span>
+<span class="tp">int</span>   counter          = <span class="num">42</span>;
+
+<span class="cm">/* .bss — uninitialized global: zero-filled by kernel, no disk space */</span>
+<span class="tp">int</span>   uninit_global;
+
+<span class="cm">/* .bss — zero-initialized static: same section as uninit globals */</span>
+<span class="kw">static</span> <span class="tp">char</span> buffer[<span class="num">1024</span>];
+
+<span class="cm">/* .data — initialized static: non-zero value lives on disk */</span>
+<span class="kw">static</span> <span class="tp">int</span>  magic      = <span class="num">0xDEAD</span>;
+
+<span class="cm">/* .text — function code: compiled to machine instructions */</span>
+<span class="tp">void</span> <span class="fn">greet</span>(<span class="tp">void</span>) {
+    <span class="fn">printf</span>(<span class="str">"%s\n"</span>, greeting);  <span class="cm">/* ptr in .data, string in .rodata */</span>
+    counter++;
+}
+
+<span class="tp">int</span> <span class="fn">main</span>(<span class="tp">void</span>) {
+    <span class="fn">greet</span>();
+    buffer[<span class="num">0</span>] = (<span class="tp">char</span>) magic;  <span class="cm">/* .bss write — page is RW, not RX */</span>
+    <span class="kw">return</span> counter;
+}</pre>
+        </div>
+
+        <h3>// nm — <span data-pt="símbolo por símbolo" data-en="symbol by symbol">símbolo por símbolo</span></h3>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">nm -n example — symbols sorted by address</span>
+                <span class="code-lang">shell</span>
+            </div>
+<pre>$ nm -n example
+                 U __libc_start_main@GLIBC_2.34
+                 U printf@GLIBC_2.2.5
+0000000000401060 T _start         <span class="cm"># .text — entry point (NOT main)</span>
+0000000000401135 T greet          <span class="cm"># .text — our function</span>
+0000000000401149 T main           <span class="cm"># .text — main() body</span>
+0000000000402004 R greeting       <span class="cm"># .rodata — R = read-only data</span>
+0000000000403018 D counter        <span class="cm"># .data  — D = initialized data</span>
+000000000040301c D magic          <span class="cm"># .data  — D = initialized static</span>
+0000000000404020 B uninit_global  <span class="cm"># .bss   — B = uninitialized (Block)</span>
+0000000000404024 B buffer         <span class="cm"># .bss   — B = zero-filled static</span>
+
+<span class="cm"># Symbol type letters:</span>
+<span class="cm"># T = .text (code)     R = .rodata (read-only)   D = .data (initialized)</span>
+<span class="cm"># B = .bss  (zeroed)   U = undefined (resolved by dynamic linker at load time)</span></pre>
+        </div>
+
+        <h3>// readelf -S — <span data-pt="inspecionando cada seção" data-en="inspecting each section">inspecionando cada seção</span></h3>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">readelf -S example — section headers (key sections)</span>
+                <span class="code-lang">shell</span>
+            </div>
+<pre>$ readelf -S example
+There are 31 section headers, starting at offset 0x39a8:
+
+Section Headers:
+  [Nr] Name         Type     Address            Off    Size   ES Flg Lk Inf Al
+  [14] .text        PROGBITS 0000000000401000  001000 0001c5 00 AX   0   0  16
+  [15] .fini        PROGBITS 00000000004011c4  0011c4 00000d 00 AX   0   0   4
+  [16] .rodata      PROGBITS 0000000000402000  002000 000014 00  A   0   0   4
+  [17] .eh_frame    PROGBITS 0000000000402018  002018 000090 00  A   0   0   8
+  [24] .data        PROGBITS 0000000000403000  003000 000028 00 WA   0   0   8
+  [25] .bss         NOBITS   0000000000404020  003028 000404 00 WA   0   0  32
+
+<span class="cm"># Key flags:  A = alloc (mapped)   X = exec   W = write</span>
+<span class="cm">#</span>
+<span class="cm"># .text:   AX  — mapped + executable, NOT writable</span>
+<span class="cm"># .rodata: A   — mapped, NOT writable, NOT executable</span>
+<span class="cm"># .data:   WA  — mapped + writable,   NOT executable</span>
+<span class="cm"># .bss:    WA  NOBITS — no bytes on disk; kernel maps zero pages</span></pre>
+        </div>
+
+        <h3>// /proc — <span data-pt="verificando o mapeamento em tempo de execução" data-en="verifying the mapping at runtime">verificando o mapeamento em tempo de execução</span></h3>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">cat /proc/$(pgrep example)/maps</span>
+                <span class="code-lang">shell</span>
+            </div>
+<pre>00400000-00401000 r--p 00000000 08:01 1048576  /home/user/example  <span class="cm"># R   headers</span>
+00401000-00402000 r-xp 00001000 08:01 1048576  /home/user/example  <span class="cm"># R-X .text</span>
+00402000-00403000 r--p 00002000 08:01 1048576  /home/user/example  <span class="cm"># R   .rodata</span>
+00403000-00404000 r--p 00002000 08:01 1048576  /home/user/example  <span class="cm"># R   RELRO region</span>
+00404000-00405000 rw-p 00003000 08:01 1048576  /home/user/example  <span class="cm"># RW  .data + .bss</span>
+7f3a40000000-7f3a40200000 r--p 00000000 ...    /lib/x86_64-linux-gnu/libc.so.6
+7f3a40200000-7f3a40380000 r-xp 00200000 ...    /lib/x86_64-linux-gnu/libc.so.6
+7f3a40380000-7f3a403d0000 r--p 00380000 ...    /lib/x86_64-linux-gnu/libc.so.6
+7f3a403d0000-7f3a403d4000 r--p 003cf000 ...    /lib/x86_64-linux-gnu/libc.so.6
+7f3a403d4000-7f3a403d6000 rw-p 003d3000 ...    /lib/x86_64-linux-gnu/libc.so.6
+7f3a40600000-7f3a40628000 r--p 00000000 ...    /lib64/ld-linux-x86-64.so.2
+7f3a40628000-7f3a40652000 r-xp 00028000 ...    /lib64/ld-linux-x86-64.so.2
+7fff2c100000-7fff2c121000 rw-p 00000000 00:00 0  [stack]
+7fff2c137000-7fff2c13b000 r--p 00000000 00:00 0  [vvar]
+7fff2c13b000-7fff2c13d000 r-xp 00000000 00:00 0  [vdso]</pre>
+        </div>
+
+        <p class="lang-pt">
+            Observe que as permissões no <code>/proc/PID/maps</code> correspondem exatamente
+            aos flags <code>Flg</code> dos Program Headers. O kernel não inventa essas
+            permissões — ele as lê diretamente dos campos <code>p_flags</code> de cada
+            <code>PT_LOAD</code> no arquivo ELF e as aplica como atributos de PTE na MMU.
+        </p>
+        <p class="lang-en" style="display:none">
+            Notice that the permissions in <code>/proc/PID/maps</code> correspond exactly to
+            the <code>Flg</code> fields of the Program Headers. The kernel does not invent
+            these permissions — it reads them directly from the <code>p_flags</code> field of
+            each <code>PT_LOAD</code> entry in the ELF file and applies them as PTE attributes
+            in the MMU.
+        </p>
+    </section>
+
+    <!-- 05 — PERMISSÕES E SEGURANÇA -->
+    <section class="post-section" id="seguranca">
+        <div class="section-label">05</div>
+        <h2 data-pt="Permissões, W^X e a Cadeia de Segurança"
+            data-en="Permissions, W^X and the Security Chain">
+            <span data-pt="Permissões, W^X e a Cadeia de Segurança" data-en="Permissions, W^X and the Security Chain">Permissões, W^X e a Cadeia de Segurança</span>
+        </h2>
+
+        <p class="lang-pt">
+            As permissões de cada segmento não são apenas organização — elas são a primeira
+            linha de defesa contra classes inteiras de exploits. O princípio
+            <strong style="color:#fff">W^X</strong> (Write XOR Execute) estabelece que uma
+            página de memória nunca deve ser simultaneamente gravável e executável. O ELF,
+            o kernel e o hardware cooperam para garantir isso.
+        </p>
+        <p class="lang-en" style="display:none">
+            Each segment's permissions are not merely organizational — they are the first line
+            of defense against entire classes of exploits. The <strong style="color:#fff">W^X</strong>
+            (Write XOR Execute) principle establishes that a memory page should never be simultaneously
+            writable and executable. The ELF, kernel, and hardware cooperate to enforce this.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="permissões por segmento e o ataque que cada uma previne" data-en="permissions per segment and the attack each one prevents">permissões por segmento e o ataque que cada uma previne</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  Region     Permissions   PTE bits          Attack prevented
+  ─────────  ────────────  ────────────────  ──────────────────────────────────────────
+  .text      r-x           R=1  W=0  X=1     Code injection: attacker cannot modify
+             (RX not W)    NX=0              code pages even after code execution
+                                             Write attempt → #PF (SIGSEGV)
+
+  .rodata    r--           R=1  W=0  X=0     Data tampering: string literals, vtables,
+             (R only)      NX=1              and jump tables cannot be overwritten
+                                             Execute attempt → #PF (NX violation)
+
+  .data      rw-           R=1  W=1  X=0     Code execution via data: attacker may
+  .bss       (RW not X)    NX=1              write shellcode but cannot execute it
+                                             Execute attempt → #PF (NX violation)
+
+  .got       r-- (RELRO)   R=1  W=0  X=0     GOT overwrite: after startup, GOT entries
+             after startup NX=1              are made read-only. Overwriting a GOT
+                                             entry to redirect function calls fails.
+</pre>
+        </div>
+
+        <h3>// <span data-pt="A cadeia completa de proteções modernas" data-en="The complete chain of modern protections">A cadeia completa de proteções modernas</span></h3>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="hardening de binário — camadas empilhadas" data-en="binary hardening — stacked layers">hardening de binário — camadas empilhadas</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  <span class="op">NX / XD bit</span>  (ELF p_flags PF_X → PTE bit 63 = Execute Disable)
+  ├── Hardware enforcement: data pages cannot be executed even if jumped to.
+  ├── Defeats: classic shellcode injection (stack/heap shellcode).
+  └── Bypass: ROP (Return-Oriented Programming) — reuses existing .text gadgets.
+
+  <span class="op">ASLR</span>  (kernel: randomize_va_space, PIE binary: ET_DYN + -fPIE)
+  ├── Randomizes base address of code, stack, heap, mmap at every execve().
+  ├── Attacker cannot hardcode addresses of gadgets, PLT stubs, or libc symbols.
+  ├── Requires PIE (Position Independent Executable): code uses RIP-relative addressing.
+  └── Bypass: information leak — a single leaked pointer kills ASLR.
+
+  <span class="op">RELRO</span>  (GNU_RELRO segment + BIND_NOW / -z now)
+  ├── After dynamic linker resolves all symbols, remaps .got and .init_array as R--.
+  ├── Partial RELRO: .got.plt still writable (lazy binding still possible).
+  ├── Full RELRO (-z now): ALL GOT entries resolved at startup, entire GOT is R--.
+  └── Defeats: GOT overwrite attacks that redirect function pointers.
+
+  <span class="op">Stack Canary</span>  (gcc -fstack-protector-strong)
+  ├── Compiler inserts a random value between locals and the saved return address.
+  ├── Checked before RET — mismatch aborts the process.
+  └── Defeat: info leak to read the canary value, then overwrite with correct value.
+
+  <span class="op">CFI / CET</span>  (Intel Control-flow Enforcement Technology, -fcf-protection)
+  ├── ENDBR64 instruction marks valid indirect call/jump targets.
+  ├── Shadow Stack: hardware-maintained copy of return addresses.
+  └── Defeats: ROP chains and JOP (Jump-Oriented Programming).
+</pre>
+        </div>
+
+        <h3>// <span data-pt="Verificando as proteções ativas" data-en="Verifying active protections">Verificando as proteções ativas</span></h3>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">checksec — auditing binary mitigations</span>
+                <span class="code-lang">shell</span>
+            </div>
+<pre><span class="cm"># checksec is part of pwntools or available as standalone</span>
+$ checksec --file=example
+[*] '/home/user/example'
+    Arch:       amd64-64-little
+    RELRO:      Full RELRO
+    Stack:      Canary found
+    NX:         NX enabled
+    PIE:        PIE enabled
+    SHSTK:      Enabled
+    IBT:        Enabled
+    Stripped:   No
+
+<span class="cm"># Build the same binary WITHOUT mitigations (for CTF / research):</span>
+$ gcc -o vulnerable main.c     \
+      -no-pie                  \  <span class="cm"># disable PIE → fixed addresses</span>
+      -fno-stack-protector     \  <span class="cm"># disable canary</span>
+      -z norelro               \  <span class="cm"># disable RELRO</span>
+      -z execstack                <span class="cm"># make stack executable (NX off)</span>
+
+$ checksec --file=vulnerable
+[*] '/home/user/vulnerable'
+    Arch:       amd64-64-little
+    RELRO:      No RELRO
+    Stack:      No canary found
+    NX:         NX disabled
+    PIE:        No PIE (0x400000)</pre>
+        </div>
+
+        <div class="callout">
+            <p><strong data-pt="Por que PIE torna tudo diferente" data-en="Why PIE changes everything">Por que <span data-pt="PIE torna tudo diferente" data-en="PIE changes everything">PIE torna tudo diferente</span></strong></p>
+            <p class="lang-pt">Um binário sem PIE (<code>ET_EXEC</code>) tem endereços absolutos
+            hardcoded pelo linker — <code>.text</code> começa em <code>0x400000</code>, sempre.
+            Um binário PIE (<code>ET_DYN</code>, compilado com <code>-fPIE</code>) usa
+            endereçamento relativo ao RIP para tudo. O kernel pode carregá-lo em qualquer base
+            virtual aleatória a cada execução. Sem ASLR, a segurança fornecida pelo NX e RELRO
+            é significativamente enfraquecida porque o atacante conhece todos os endereços de antemão.</p>
+            <p class="lang-en" style="display:none">A non-PIE binary (<code>ET_EXEC</code>) has
+            absolute addresses hardcoded by the linker — <code>.text</code> always starts at
+            <code>0x400000</code>. A PIE binary (<code>ET_DYN</code>, compiled with
+            <code>-fPIE</code>) uses RIP-relative addressing for everything. The kernel can load it
+            at any random virtual base on each execution. Without ASLR, the security provided by NX
+            and RELRO is significantly weakened because the attacker knows all addresses in advance.</p>
+        </div>
+    </section>
+
+    <div class="post-nav">
+        <a href="../posts.html">
+            <i class='bx bx-arrow-back'></i>
+            <span data-pt="Voltar aos posts" data-en="Back to posts">Voltar aos posts</span>
+        </a>
+        <a href="paging-x86.html">
+            <span data-pt="Ver: Virtual Memory & Paging →" data-en="See: Virtual Memory & Paging →">Ver: Virtual Memory & Paging →</span>
+        </a>
+    </div>
+
+</article>
+</main>
+
+<footer>
+    <p>&copy; 2026 Robert Souza Lages.</p>
+</footer>
+
+<script>
+    let currentLang = localStorage.getItem('lang') || 'pt';
+
+    function setLang(lang) {
+        currentLang = lang;
+        localStorage.setItem('lang', lang);
+        document.querySelectorAll('[data-pt], [data-en]').forEach(el => {
+            const val = el.getAttribute('data-' + lang);
+            if (val !== null) el.textContent = val;
+        });
+        document.querySelectorAll('.lang-pt').forEach(el => el.style.display = lang === 'pt' ? '' : 'none');
+        document.querySelectorAll('.lang-en').forEach(el => el.style.display = lang === 'en' ? '' : 'none');
+        document.documentElement.lang = lang === 'pt' ? 'pt-BR' : 'en';
+        document.querySelectorAll('.lang-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.id === 'btn-' + lang);
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        document.body.addEventListener('click', (e) => {
+            const btn = e.target.closest('.lang-btn');
+            if (btn && btn.id) setLang(btn.id.replace('btn-', ''));
+        });
+        const hamburger = document.querySelector('.hamburger');
+        const navLinks  = document.querySelector('.nav-links');
+        if (hamburger) hamburger.addEventListener('click', () => navLinks.classList.toggle('active'));
+        setLang(currentLang);
+    });
+</script>
+
+</body>
+</html>

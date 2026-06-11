@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bitwise State Machines: The O(1) Memory Magic Trick | Robert Souza Lages</title>
+    <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+    <link rel="stylesheet" href="style.css">
+    <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
+</head>
+<body>
+
+<nav class="navbar">
+    <div class="logo"><span>0x</span>Robert<span>_</span></div>
+    <ul class="nav-links">
+        <li><a href="../index.html"    data-pt="Sobre"    data-en="About">Sobre</a></li>
+        <li><a href="../resume.html"   data-pt="Currículo" data-en="Resume">Currículo</a></li>
+        <li><a href="../projects.html" data-pt="Projetos"  data-en="Projects">Projetos</a></li>
+        <li><a href="../posts.html" class="active">Posts</a></li>
+    </ul>
+    <div class="navbar-right">
+        <div class="lang-toggle">
+            <button class="lang-btn active" id="btn-pt">PT</button>
+            <button class="lang-btn"        id="btn-en">EN</button>
+        </div>
+        <div class="hamburger"><i class='bx bx-menu'></i></div>
+    </div>
+</nav>
+
+<main>
+<article class="post-wrapper">
+
+    <header class="post-header">
+        <div class="post-breadcrumb">
+            <a href="../posts.html">posts</a><span>/</span><span>bitwise-state-machines</span>
+        </div>
+        <div class="post-meta">
+            <span class="post-tag">C/C++</span>
+            <span class="post-tag">ALGORITHMS</span>
+            <span class="post-tag">LOW-LEVEL</span>
+            <time class="post-date" datetime="2026-05-26">2026-05-26</time>
+        </div>
+        <h1 class="post-title">
+            <span data-pt="Máquinas de Estado Bitwise:" data-en="Bitwise State Machines:">Máquinas de Estado Bitwise:</span><br>
+            <span data-pt="O Truque Mágico O(1) de Memória" data-en="The O(1) Memory Magic Trick">O Truque Mágico O(1) de Memória</span>
+        </h1>
+        <p class="post-summary lang-pt">
+            Um array com milhões de números. Cada número aparece exatamente 3 vezes —
+            exceto um único intruso que aparece apenas uma vez. Encontre-o em tempo O(n)
+            com <strong style="color:#fff">zero memória extra</strong>. Sem HashMap. Sem set.
+            Sem sorting. Apenas dois inteiros de 32 bits e a lógica mais elegante que você
+            já vai ver. Isso não é um truque — é uma máquina de estado construída com
+            portas lógicas puras.
+        </p>
+        <p class="post-summary lang-en" style="display:none">
+            An array with millions of numbers. Every number appears exactly 3 times —
+            except one lone intruder that appears only once. Find it in O(n) time with
+            <strong style="color:#fff">zero extra memory</strong>. No HashMap. No set.
+            No sorting. Just two 32-bit integers and the most elegant logic you will ever see.
+            This is not a trick — it is a state machine built from pure logic gates.
+        </p>
+
+        <div class="toc lang-pt">
+            <div class="toc-title">// ÍNDICE</div>
+            <ol>
+                <li><a href="#problema">O Problema Impossível</a></li>
+                <li><a href="#paradigma">A Virada Paradigmática: Vertical vs. Horizontal</a></li>
+                <li><a href="#ferramentas">As Portas de Hardware: XOR e AND NOT</a></li>
+                <li><a href="#algoritmo">A Obra-prima: o Algoritmo Módulo-3</a></li>
+                <li><a href="#trace">Teste de Mesa: 3 Passes, 1 Aniquilação</a></li>
+                <li><a href="#prova">Prova Completa com Array Real</a></li>
+            </ol>
+        </div>
+        <div class="toc lang-en" style="display:none">
+            <div class="toc-title">// TABLE OF CONTENTS</div>
+            <ol>
+                <li><a href="#problema">The Impossible Problem</a></li>
+                <li><a href="#paradigma">The Paradigm Shift: Vertical vs. Horizontal</a></li>
+                <li><a href="#ferramentas">The Hardware Gates: XOR and AND NOT</a></li>
+                <li><a href="#algoritmo">The Masterpiece: the Modulo-3 Algorithm</a></li>
+                <li><a href="#trace">Desktop Test: 3 Passes, 1 Annihilation</a></li>
+                <li><a href="#prova">Full Proof with a Real Array</a></li>
+            </ol>
+        </div>
+    </header>
+
+    <!-- 01 — O PROBLEMA IMPOSSÍVEL -->
+    <section class="post-section" id="problema">
+        <div class="section-label">01</div>
+        <h2 data-pt="O Problema Impossível" data-en="The Impossible Problem">
+            <span data-pt="O Problema Impossível" data-en="The Impossible Problem">O Problema Impossível</span>
+        </h2>
+
+        <p class="lang-pt">
+            Aqui está o desafio. Um array de inteiros onde <em>todo número aparece exatamente
+            3 vezes</em>, exceto um único intruso que aparece apenas 1 vez. Encontre o intruso.
+            Restrições absolutas: <strong style="color:#fff">O(n) tempo</strong> e
+            <strong style="color:#fff">O(1) espaço</strong>.
+        </p>
+        <p class="lang-en" style="display:none">
+            Here is the challenge. An array of integers where <em>every number appears exactly
+            3 times</em>, except one lone intruder that appears exactly once. Find the intruder.
+            Absolute constraints: <strong style="color:#fff">O(n) time</strong> and
+            <strong style="color:#fff">O(1) space</strong>.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="o problema" data-en="the problem">the problem</span>
+                <span class="code-lang">cpp</span>
+            </div>
+<pre><span class="cm">/* Every element appears exactly 3 times, except ONE anomaly */</span>
+<span class="tp">int</span> arr[] = { <span class="num">2</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">2</span> };          <span class="cm">// answer: 3</span>
+<span class="tp">int</span> arr[] = { <span class="num">5</span>, <span class="num">5</span>, <span class="num">7</span>, <span class="num">5</span>, <span class="num">9</span>, <span class="num">9</span>, <span class="num">9</span> };  <span class="cm">// answer: 7</span>
+<span class="tp">int</span> arr[] = { <span class="num">0</span>, <span class="num">1</span>, <span class="num">0</span>, <span class="num">1</span>, <span class="num">0</span>, <span class="num">1</span>, <span class="num">99</span> }; <span class="cm">// answer: 99</span>
+
+<span class="cm">// Rules:                                                        */</span>
+<span class="cm">// ✗ No HashMap, unordered_map, std::map — those are O(n) space  */</span>
+<span class="cm">// ✗ No sorting — that is O(n log n) time                        */</span>
+<span class="cm">// ✗ No extra array or buffer — still O(n) space                 */</span>
+<span class="cm">// ✓ Two int variables. That is it. Period.                       */</span></pre>
+        </div>
+
+        <h3>// <span data-pt="Por que as soluções óbvias falham?" data-en="Why do the obvious solutions fail?">Por que as soluções óbvias falham?</span></h3>
+
+        <p class="lang-pt">
+            A solução "óbvia" é um HashMap contando frequências. Funciona, mas viola O(1) espaço:
+            o mapa cresce com n. Sorting funciona em O(1) espaço extra mas viola O(n) tempo.
+            E o truque XOR elegante que funciona para "número duplicado" (<code>a ^ a == 0</code>)?
+            Não funciona aqui — XOR é módulo-2, e nosso problema é módulo-3. <code>a ^ a ^ a == a</code>,
+            não zero.
+        </p>
+        <p class="lang-en" style="display:none">
+            The "obvious" solution is a HashMap counting frequencies. It works, but violates O(1)
+            space: the map grows with n. Sorting works in O(1) extra space but violates O(n) time.
+            And the elegant XOR trick that works for "duplicate number" (<code>a ^ a == 0</code>)?
+            It does not work here — XOR is modulo-2, and our problem is modulo-3.
+            <code>a ^ a ^ a == a</code>, not zero.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="por que XOR simples não funciona" data-en="why plain XOR doesn't work">why plain XOR doesn't work</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  Mod-2 problem (each number appears TWICE):
+    XOR all elements → duplicates cancel (a ^ a = 0) → unique survives ✓
+
+  Mod-3 problem (each number appears THREE times):
+    XOR all elements → a ^ a ^ a = a (does NOT cancel!) ✗
+
+  We need a counter that resets after 3, not after 2.
+  That requires a 2-bit state machine — and that is exactly what we build.
+</pre>
+        </div>
+
+        <div class="callout warn">
+            <p><strong data-pt="A quebra de paradigma que está chegando" data-en="The paradigm break that is coming">// <span data-pt="A quebra de paradigma que está chegando" data-en="The paradigm break that is coming">A quebra de paradigma que está chegando</span></strong></p>
+            <p class="lang-pt">A solução que vamos construir não <em>compara</em> números entre si.
+            Ela não pergunta "esse número já apareceu antes?". Ela trata cada número como
+            um sinal físico que altera o estado de duas variáveis ao mesmo tempo,
+            independentemente de qualquer outro número no array.</p>
+            <p class="lang-en" style="display:none">The solution we are about to build does not
+            <em>compare</em> numbers with each other. It does not ask "has this number appeared
+            before?". It treats each number as a physical signal that simultaneously changes the
+            state of two variables, completely independently of any other number in the array.</p>
+        </div>
+    </section>
+
+    <!-- 02 — A VIRADA PARADIGMÁTICA -->
+    <section class="post-section" id="paradigma">
+        <div class="section-label">02</div>
+        <h2 data-pt="A Virada Paradigmática: Vertical vs. Horizontal"
+            data-en="The Paradigm Shift: Vertical vs. Horizontal">
+            <span data-pt="A Virada Paradigmática" data-en="The Paradigm Shift">A Virada Paradigmática</span>
+        </h2>
+
+        <p class="lang-pt">
+            Todo mundo pensa "horizontalmente" — percorremos o array da esquerda para a direita,
+            comparando elementos, construindo mapas. Mas o segredo desta solução é pensar
+            <strong style="color:#fff">verticalmente</strong>.
+        </p>
+        <p class="lang-en" style="display:none">
+            Everyone thinks "horizontally" — we traverse the array left to right, comparing
+            elements, building maps. But the secret of this solution is to think
+            <strong style="color:#fff">vertically</strong>.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="pensamento horizontal vs. vertical" data-en="horizontal vs. vertical thinking">horizontal vs. vertical thinking</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  HORIZONTAL (traditional): compare elements against each other
+  ┌────┬────┬────┬────┬────┬────┬────┐
+  │  5 │  5 │  7 │  5 │  9 │  9 │  9 │
+  └────┴────┴────┴────┴────┴────┴────┘
+    ↔    ↔    ↔    ↔    ↔    ↔
+  "Is 5 == 5? Yes. Count[5]++. Is 5 == 7? No..."
+
+  VERTICAL (bitwise): treat each BIT COLUMN as an independent counter
+  ┌────┬────┬────┬────┬────┬────┬────┐
+  │  5 │  5 │  7 │  5 │  9 │  9 │  9 │   ← decimal values (irrelevant)
+  ├────┼────┼────┼────┼────┼────┼────┤
+  │0101│0101│0111│0101│1001│1001│1001│   ← binary representation
+  └────┴────┴────┴────┴────┴────┴────┘
+    ↕    ↕    ↕    ↕    ↕    ↕    ↕
+  bit3: 0  0  0  0  1  1  1  → count=3 → divisible by 3 → VANISH
+  bit2: 1  1  1  1  0  0  0  → count=3 → divisible by 3 → VANISH
+  bit1: 0  0  1  0  0  0  0  → count=1 → NOT divisible by 3 → SURVIVE (it's in 7!)
+  bit0: 1  1  1  1  1  1  1  → count=7 → 7 mod 3 = 1 → SURVIVE (also in 7!)
+
+  Result: bits 1 and 0 survived. 0b0011 = ... wait, 7 = 0b0111. Let me redo with bit2.
+  7 = 0b0111, 5 = 0b0101, 9 = 0b1001
+
+  bit3: 0+0+0+0+1+1+1 = 3 mod 3 = 0 → VANISH
+  bit2: 1+1+1+1+0+0+0 = 4 mod 3 = 1 → SURVIVE  ← unique's bit
+  bit1: 0+0+1+0+0+0+0 = 1 mod 3 = 1 → SURVIVE  ← unique's bit
+  bit0: 1+1+1+1+1+1+1 = 7 mod 3 = 1 → SURVIVE  ← unique's bit
+
+  Bits 2,1,0 survived → 0b0111 = 7 ✓
+</pre>
+        </div>
+
+        <h3>// <span data-pt="A Analogia da Esteira Industrial" data-en="The Industrial Conveyor Belt Analogy">A Analogia da Esteira Industrial</span></h3>
+
+        <p class="lang-pt">
+            Imagine uma fábrica com <strong style="color:#fff">32 esteiras de seleção óptica</strong>
+            funcionando em paralelo — uma para cada posição de bit. Cada produto que entra na
+            fábrica ativa <em>simultaneamente</em> todas as esteiras correspondentes aos bits
+            que ele tem ligados. Cada esteira tem dois silos: <code>ones</code> e <code>twos</code>.
+        </p>
+        <p class="lang-en" style="display:none">
+            Imagine a factory with <strong style="color:#fff">32 optical sorting conveyors</strong>
+            running in parallel — one for each bit position. Each product entering the factory
+            <em>simultaneously</em> activates all conveyors corresponding to its set bits. Each
+            conveyor has two silos: <code>ones</code> and <code>twos</code>.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="a fábrica de 32 esteiras paralelas" data-en="the factory with 32 parallel conveyors">the factory with 32 parallel conveyors</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  A product with value 5 (0b0101) arrives:
+
+  Bit 31 ─── conveyor 31 ─── [ones_31=0] [twos_31=0]  (bit is 0: nothing happens)
+  Bit 30 ─── conveyor 30 ─── [ones_30=0] [twos_30=0]  (bit is 0: nothing happens)
+  ...
+  Bit 2  ─── conveyor  2 ─── [ones_2 =?] [twos_2 =?]  (bit is 1: ACTIVATED!)
+  Bit 1  ─── conveyor  1 ─── [ones_1 =0] [twos_1 =0]  (bit is 0: nothing happens)
+  Bit 0  ─── conveyor  0 ─── [ones_0 =?] [twos_0 =?]  (bit is 1: ACTIVATED!)
+
+  All 32 conveyors process in parallel in ONE CPU clock cycle.
+  This is why it is O(1) space — we only need TWO 32-bit integers (ones, twos),
+  each acting as 32 single-bit silos simultaneously.
+</pre>
+        </div>
+
+        <p class="lang-pt">
+            A beleza física disso: quando dizemos <code>ones = (ones ^ sig) & ~twos</code>,
+            não estamos executando isso sequencialmente para cada bit. O hardware do processador
+            executa todas as 32 operações <em>em paralelo</em>, em um único ciclo de clock.
+            Trinta e dois contadores independentes, processados ao mesmo tempo.
+        </p>
+        <p class="lang-en" style="display:none">
+            The physical beauty of this: when we say <code>ones = (ones ^ sig) & ~twos</code>,
+            we are not executing this sequentially for each bit. The processor hardware runs all
+            32 operations <em>in parallel</em>, in a single clock cycle. Thirty-two independent
+            counters, all processed at once.
+        </p>
+    </section>
+
+    <!-- 03 — AS FERRAMENTAS -->
+    <section class="post-section" id="ferramentas">
+        <div class="section-label">03</div>
+        <h2 data-pt="As Portas de Hardware: XOR e AND NOT"
+            data-en="The Hardware Gates: XOR and AND NOT">
+            <span data-pt="As Portas de Hardware" data-en="The Hardware Gates">As Portas de Hardware</span>
+        </h2>
+
+        <p class="lang-pt">
+            Para construir nosso contador módulo-3, precisamos de exatamente duas ferramentas.
+            Cada uma tem um papel físico muito específico.
+        </p>
+        <p class="lang-en" style="display:none">
+            To build our modulo-3 counter, we need exactly two tools. Each has a very specific
+            physical role.
+        </p>
+
+        <h3>// XOR (<code>^</code>) — <span data-pt="O Ejetor Toggle" data-en="The Toggle Ejector">O Ejetor Toggle</span></h3>
+
+        <p class="lang-pt">
+            XOR é o mecanismo de entrada e saída do silo. Ele tem uma propriedade perfeita
+            para nosso propósito: se um token <strong style="color:#fff">não está</strong> no silo
+            (<code>0</code>), XOR com <code>1</code> <em>coloca</em> ele lá. Se já
+            <strong style="color:#fff">está</strong> lá (<code>1</code>), XOR com <code>1</code>
+            o <em>ejeta</em>. É um interruptor toggle físico.
+        </p>
+        <p class="lang-en" style="display:none">
+            XOR is the silo's entry and exit mechanism. It has a perfect property for our purpose:
+            if a token is <strong style="color:#fff">not</strong> in the silo (<code>0</code>),
+            XOR with <code>1</code> <em>places</em> it there. If it is <strong style="color:#fff">
+            already</strong> there (<code>1</code>), XOR with <code>1</code> <em>ejects</em> it.
+            It is a physical toggle switch.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">XOR — the Toggle Ejector</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  silo_state ^ incoming_bit:
+
+  0 ^ 1 = 1   ← silo was EMPTY, token ENTERS   (first appearance)
+  1 ^ 1 = 0   ← silo was FULL,  token EJECTED  (second appearance: leaves ones, goes to twos)
+  0 ^ 1 = 1   ← silo was EMPTY, token ENTERS   (but this is stopped by the Lock below!)
+
+  Crucial: XOR alone would cause chaos.
+  If unchecked, a bit would bounce back into 'ones' on its third pass.
+  We need a LOCK.
+</pre>
+        </div>
+
+        <h3>// AND NOT (<code>&amp; ~</code>) — <span data-pt="A Trava Mecânica" data-en="The Mechanical Lock">A Trava Mecânica</span></h3>
+
+        <p class="lang-pt">
+            <code>&amp; ~</code> é a trava que impede que um token entre no silo errado.
+            <code>~twos</code> significa "NOT twos" — uma máscara que é <code>0</code>
+            em exatamente os bits onde <code>twos</code> é <code>1</code>. Quando aplicamos
+            <code>&amp; ~twos</code> ao resultado do XOR, estamos dizendo:
+            <strong style="color:#fff">"qualquer bit que já está no silo twos não pode entrar
+            no silo ones"</strong>. É uma porta de exclusão física.
+        </p>
+        <p class="lang-en" style="display:none">
+            <code>&amp; ~</code> is the lock that prevents a token from entering the wrong silo.
+            <code>~twos</code> means "NOT twos" — a mask that is <code>0</code> at exactly the
+            bits where <code>twos</code> is <code>1</code>. When we apply <code>&amp; ~twos</code>
+            to the XOR result, we are saying: <strong style="color:#fff">"any bit already in the
+            twos silo cannot enter the ones silo"</strong>. It is a physical exclusion gate.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">AND NOT — the Mechanical Lock</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  (ones ^ sig) & ~twos:
+
+  If twos has a bit set (that bit has been seen TWICE already):
+    ~twos has a 0 at that position
+    AND with 0 = FORCED TO 0
+    → entry to 'ones' is BLOCKED for that bit
+
+  If twos does NOT have a bit (that bit has been seen 0 or 1 times):
+    ~twos has a 1 at that position
+    AND with 1 = PASSES THROUGH UNCHANGED
+    → entry to 'ones' is ALLOWED for that bit
+
+  The SAME logic applies symmetrically:
+  (twos ^ sig) & ~ones: blocks entry to 'twos' if ones just captured it.
+</pre>
+        </div>
+
+        <div class="callout">
+            <p><strong data-pt="// Por que a ordem importa: ones é atualizado antes de twos" data-en="// Why order matters: ones is updated before twos">// <span data-pt="Por que a ordem importa: ones é atualizado antes de twos" data-en="Why order matters: ones is updated before twos">Por que a ordem importa</span></strong></p>
+            <p class="lang-pt">As duas linhas do algoritmo DEVEM ser executadas nessa ordem.
+            <code>ones</code> é calculado usando o <code>twos</code> antigo. Depois,
+            <code>twos</code> é calculado usando o <code>ones</code> <em>novo</em>.
+            Isso cria a interação correta: quando um bit entra em <code>ones</code> pela
+            primeira vez, o <code>twos</code> atualizado usa esse novo estado de <code>ones</code>
+            para se bloquear, garantindo que o bit não apareça nos dois silos ao mesmo tempo.</p>
+            <p class="lang-en" style="display:none">The two lines of the algorithm MUST execute in
+            this order. <code>ones</code> is computed using the OLD <code>twos</code>. Then
+            <code>twos</code> is computed using the NEW <code>ones</code>. This creates the correct
+            interaction: when a bit first enters <code>ones</code>, the updated <code>twos</code>
+            uses this new state of <code>ones</code> to block itself, ensuring the bit never
+            appears in both silos at the same time.</p>
+        </div>
+    </section>
+
+    <!-- 04 — O ALGORITMO -->
+    <section class="post-section" id="algoritmo">
+        <div class="section-label">04</div>
+        <h2 data-pt="A Obra-prima: o Algoritmo Módulo-3"
+            data-en="The Masterpiece: the Modulo-3 Algorithm">
+            <span data-pt="A Obra-prima" data-en="The Masterpiece">A Obra-prima</span>
+        </h2>
+
+        <p class="lang-pt">
+            Tudo que construímos culmina em duas linhas. Duas linhas que implementam
+            32 contadores paralelos módulo-3, em O(1) espaço, em O(1) tempo por elemento.
+        </p>
+        <p class="lang-en" style="display:none">
+            Everything we have built culminates in two lines. Two lines that implement
+            32 parallel modulo-3 counters, in O(1) space, in O(1) time per element.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">find_unique.cpp — the complete solution</span>
+                <span class="code-lang">cpp</span>
+            </div>
+<pre><span class="pp">#include</span> <span class="str">&lt;vector&gt;</span>
+
+<span class="tp">int</span> <span class="fn">findUnique</span>(<span class="kw">const</span> std::vector&lt;<span class="tp">int</span>&gt;&amp; nums) {
+    <span class="tp">int</span> ones = <span class="num">0</span>;   <span class="cm">/* silo 1: bits seen (count % 3) == 1 */</span>
+    <span class="tp">int</span> twos = <span class="num">0</span>;   <span class="cm">/* silo 2: bits seen (count % 3) == 2 */</span>
+
+    <span class="kw">for</span> (<span class="tp">int</span> sig : nums) {
+        <span class="cm">/*  ┌─────────────────────────────────────────────────────────────┐ */</span>
+        <span class="cm">/*  │  THE MASTERPIECE: two lines, 32 parallel modulo-3 counters  │ */</span>
+        <span class="cm">/*  └─────────────────────────────────────────────────────────────┘ */</span>
+        ones = (ones ^ sig) &amp; ~twos;   <span class="cm">/* XOR in, then lock out bits already in twos */</span>
+        twos = (twos ^ sig) &amp; ~ones;   <span class="cm">/* XOR in, then lock out bits already in ones */</span>
+    }
+
+    <span class="cm">/* After processing all elements:                           */</span>
+    <span class="cm">/* Bits seen 3× → count%3==0 → in neither silo → 0         */</span>
+    <span class="cm">/* Bits seen 1× → count%3==1 → still in 'ones' silo        */</span>
+    <span class="cm">/* Answer lives in 'ones'.                                  */</span>
+    <span class="kw">return</span> ones;
+}</pre>
+        </div>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="máquina de estado por posição de bit" data-en="state machine per bit position">state machine per bit position</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  For each of the 32 independent bit positions:
+
+  State 00   ──── see "1" ────▶   State 01   ──── see "1" ────▶   State 10
+  ones=0                          ones=1                           ones=0
+  twos=0                          twos=0                           twos=1
+     ▲                                                                │
+     └────────────────── see "1" ──────────────────────────────────────┘
+                         (annihilated: count is now divisible by 3)
+
+  "0" bit never activates (sig bit is 0 → no state change in that position)
+  Only "1" bits drive the state transitions.
+
+  After the 3rd "1":  State 00 again → completely gone from both silos.
+  After the 1st "1":  State 01 → survives in 'ones' → this is the unique element.
+</pre>
+        </div>
+    </section>
+
+    <!-- 05 — TESTE DE MESA -->
+    <section class="post-section" id="trace">
+        <div class="section-label">05</div>
+        <h2 data-pt="Teste de Mesa: 3 Passes, 1 Aniquilação"
+            data-en="Desktop Test: 3 Passes, 1 Annihilation">
+            <span data-pt="Teste de Mesa" data-en="Desktop Test">Teste de Mesa</span>: 3 Passes, 1 Annihilation
+        </h2>
+
+        <p class="lang-pt">
+            Este é o momento que vai fazer tudo <em>encaixar</em>. Vamos isolar exatamente
+            <strong style="color:#fff">uma posição de bit</strong> — o bit 0 — e rastrear
+            o que acontece quando um número com esse bit ligado passa pelo algoritmo
+            exatamente 3 vezes. Começamos do zero.
+        </p>
+        <p class="lang-en" style="display:none">
+            This is the moment that will make everything <em>click</em>. We will isolate exactly
+            <strong style="color:#fff">one bit position</strong> — bit 0 — and trace what happens
+            when a number with that bit set passes through the algorithm exactly 3 times.
+            Starting from zero.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="estado inicial" data-en="initial state">initial state</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  sig = 0b...0001  (any number with bit 0 = 1)
+  ones = 0b...0000
+  twos = 0b...0000
+
+  SILOS (focusing on bit 0 only):
+  ┌─────────────────────────────┐
+  │  ONES silo:  bit 0 = [ 0 ] │  empty
+  │  TWOS silo:  bit 0 = [ 0 ] │  empty
+  └─────────────────────────────┘
+</pre>
+        </div>
+
+        <h3>// <span data-pt="PASS 1 — Primeira aparição: o bit ENTRA no silo ones" data-en="PASS 1 — First appearance: the bit ENTERS the ones silo">PASS 1 — First appearance: the bit ENTERS the ones silo</span></h3>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">pass 1 — step by step (bit 0)</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  sig (bit 0) = 1,   ones (bit 0) = 0,   twos (bit 0) = 0
+
+  ── Computing new ones ──────────────────────────────────────────────────
+  Step A: ones ^ sig   →   0 ^ 1 = 1    (XOR: silo was empty, token ENTERS)
+  Step B: ~twos        →   ~0    = 1    (NOT twos: twos is 0, so lock is OPEN)
+  Step C: result & lock →  1 & 1 = 1   ← new_ones = 1  ✓ token is in the silo!
+
+  ── Computing new twos (using NEW ones = 1) ─────────────────────────────
+  Step A: twos ^ sig   →   0 ^ 1 = 1    (XOR: silo was empty, token would enter)
+  Step B: ~ones        →   ~1    = 0    (NOT new_ones: ones just captured it!)
+  Step C: result & lock →  1 & 0 = 0   ← new_twos = 0  ✓ token is LOCKED OUT!
+
+  ┌─────────────────────────────────────────┐
+  │  ONES silo:  bit 0 = [ 1 ]  ← TOKEN IN │  count % 3 == 1 ✓
+  │  TWOS silo:  bit 0 = [ 0 ]             │
+  └─────────────────────────────────────────┘
+</pre>
+        </div>
+
+        <h3>// <span data-pt="PASS 2 — Segunda aparição: ejetado de ones, ENTRA em twos" data-en="PASS 2 — Second appearance: ejected from ones, ENTERS twos">PASS 2 — Second appearance: ejected from ones, ENTERS twos</span></h3>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">pass 2 — step by step (bit 0)</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  sig (bit 0) = 1,   ones (bit 0) = 1,   twos (bit 0) = 0
+
+  ── Computing new ones ──────────────────────────────────────────────────
+  Step A: ones ^ sig   →   1 ^ 1 = 0    (XOR: silo was FULL, token EJECTED)
+  Step B: ~twos        →   ~0    = 1    (NOT twos: twos is 0, lock is open)
+  Step C: result & lock →  0 & 1 = 0   ← new_ones = 0  ✓ token EJECTED!
+
+  ── Computing new twos (using NEW ones = 0) ─────────────────────────────
+  Step A: twos ^ sig   →   0 ^ 1 = 1    (XOR: silo was empty, token enters)
+  Step B: ~ones        →   ~0    = 1    (NOT new_ones: ones is now 0, lock is OPEN)
+  Step C: result & lock →  1 & 1 = 1   ← new_twos = 1  ✓ token moves to twos!
+
+  ┌──────────────────────────────────────────┐
+  │  ONES silo:  bit 0 = [ 0 ]              │
+  │  TWOS silo:  bit 0 = [ 1 ]  ← TOKEN IN │  count % 3 == 2 ✓
+  └──────────────────────────────────────────┘
+</pre>
+        </div>
+
+        <h3>// <span data-pt="PASS 3 — A Aniquilação: bloqueado, ejetado, EVAPORADO" data-en="PASS 3 — The Annihilation: blocked, ejected, EVAPORATED">PASS 3 — The Annihilation: blocked, ejected, EVAPORATED</span></h3>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">pass 3 — the annihilation (bit 0)</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  sig (bit 0) = 1,   ones (bit 0) = 0,   twos (bit 0) = 1
+
+  ── Computing new ones ──────────────────────────────────────────────────
+  Step A: ones ^ sig   →   0 ^ 1 = 1    (XOR: silo was empty, token would enter...)
+  Step B: ~twos        →   ~1    = 0    (NOT twos: twos is FULL → LOCK IS CLOSED!)
+  Step C: result & lock →  1 & 0 = 0   ← new_ones = 0  ✗ BLOCKED BY LOCK!
+
+  ── Computing new twos (using NEW ones = 0) ─────────────────────────────
+  Step A: twos ^ sig   →   1 ^ 1 = 0    (XOR: silo was FULL, token EJECTED)
+  Step B: ~ones        →   ~0    = 1    (NOT new_ones: ones is 0, lock is open)
+  Step C: result & lock →  0 & 1 = 0   ← new_twos = 0  ✓ token EJECTED!
+
+  ┌─────────────────────────────────────────────┐
+  │  ONES silo:  bit 0 = [ 0 ]                 │
+  │  TWOS silo:  bit 0 = [ 0 ]                 │  count % 3 == 0 → ANNIHILATED ✓
+  └─────────────────────────────────────────────┘
+
+  The bit that appeared 3 times has completely EVAPORATED from both silos.
+  It is as if it never existed.
+</pre>
+        </div>
+
+        <div class="callout">
+            <p><strong data-pt="// O que acabou de acontecer é físico e real" data-en="// What just happened is physical and real">// <span data-pt="O que acabou de acontecer é físico e real" data-en="What just happened is physical and real">O que acabou de acontecer é físico e real</span></strong></p>
+            <p class="lang-pt">Nos três passes, o estado de dois bits (<code>ones[0]</code> e
+            <code>twos[0]</code>) evoluiu: <code>00 → 01 → 10 → 00</code>. Isso é um contador
+            de 2 bits que conta módulo 3. Construímos isso com três operações bitwise.
+            E esse contador está rodando em paralelo em 32 posições de bit simultaneamente,
+            em dois inteiros de 32 bits, com custo de memória de exatamente 8 bytes. Total.
+            Para um array de bilhões de elementos.</p>
+            <p class="lang-en" style="display:none">Over the three passes, the state of two bits
+            (<code>ones[0]</code> and <code>twos[0]</code>) evolved: <code>00 → 01 → 10 → 00</code>.
+            That is a 2-bit counter counting modulo 3. We built it with three bitwise operations.
+            And that counter is running in parallel across 32 bit positions simultaneously, in two
+            32-bit integers, with a memory cost of exactly 8 bytes. Total. For an array of
+            billions of elements.</p>
+        </div>
+    </section>
+
+    <!-- 06 — PROVA COMPLETA -->
+    <section class="post-section" id="prova">
+        <div class="section-label">06</div>
+        <h2 data-pt="Prova Completa com Array Real"
+            data-en="Full Proof with a Real Array">
+            <span data-pt="Prova Completa com Array Real" data-en="Full Proof with a Real Array">Prova Completa com Array Real</span>
+        </h2>
+
+        <p class="lang-pt">
+            Agora vamos executar o algoritmo completo no array <code>[2, 2, 3, 2]</code>
+            onde a resposta é <code>3</code>. Vamos rastrear <code>ones</code> e <code>twos</code>
+            a cada passo usando os valores binários reais.
+        </p>
+        <p class="lang-en" style="display:none">
+            Now let us run the full algorithm on the array <code>[2, 2, 3, 2]</code>
+            where the answer is <code>3</code>. We will trace <code>ones</code> and
+            <code>twos</code> at every step using the actual binary values.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="trace completo de [2, 2, 3, 2] → resposta: 3" data-en="full trace of [2, 2, 3, 2] → answer: 3">full trace of [2, 2, 3, 2] → answer: 3</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  Values: 2 = 0b010,   3 = 0b011
+  Start:  ones = 0b000,  twos = 0b000
+
+  ══ sig = 2 (0b010) ════════════════════════════════════════════════
+  ones = (0b000 ^ 0b010) & ~0b000
+       = (0b010)         &  0b111
+       = 0b010                         ← bit 1 enters ones
+  twos = (0b000 ^ 0b010) & ~0b010
+       = (0b010)         &  0b101
+       = 0b000                         ← locked out (ones has bit 1)
+  State: ones = 010, twos = 000
+
+  ══ sig = 2 (0b010) ════════════════════════════════════════════════
+  ones = (0b010 ^ 0b010) & ~0b000
+       = (0b000)         &  0b111
+       = 0b000                         ← bit 1 ejected from ones
+  twos = (0b000 ^ 0b010) & ~0b000
+       = (0b010)         &  0b111
+       = 0b010                         ← bit 1 enters twos
+  State: ones = 000, twos = 010
+
+  ══ sig = 3 (0b011) ════════════════════════════════════════════════
+  ones = (0b000 ^ 0b011) & ~0b010
+       = (0b011)         &  0b101
+       = 0b001                         ← bit 0 enters ones (bit 1 blocked by twos)
+  twos = (0b010 ^ 0b011) & ~0b001
+       = (0b001)         &  0b110
+       = 0b000                         ← bit 0 locked (ones has it), bit 1 ejected!
+  State: ones = 001, twos = 000
+  Note: 3's bit 0 was seen once → safely in ones.
+        3's bit 1 was seen 3× total (twice for 2, once for 3) → ANNIHILATED.
+
+  ══ sig = 2 (0b010) ════════════════════════════════════════════════
+  ones = (0b001 ^ 0b010) & ~0b000
+       = (0b011)         &  0b111
+       = 0b011                         ← bit 1 enters ones (it's the 3rd 2-bit appearance!)
+  twos = (0b000 ^ 0b010) & ~0b011
+       = (0b010)         &  0b100
+       = 0b000                         ← bit 1 blocked (ones has it)
+
+  Wait — this doesn't look right yet. Let's verify carefully:
+  2's bit 1 has appeared: pass1=entered ones, pass2=moved to twos, pass3=?
+
+  ones = (ones ^ sig) & ~twos = (001 ^ 010) & ~000 = 011 & 111 = 011
+  twos = (twos ^ sig) & ~ones = (000 ^ 010) & ~011 = 010 & 100 = 000
+
+  State: ones = 011, twos = 000
+  Hmm, bit 1 is in ones again? Let me recount.
+
+  2's bit 1: appeared in sig=2 (3 times), appeared in sig=3 once → TOTAL = 4 times
+  4 mod 3 = 1 → should be in ones! But 3's bit 1 = 1, 2's bit 1 = 1...
+
+  Actually 3 = 0b011, so 3 contributes bit 1 as well.
+  Bit 1 count: sig[0]=2→1, sig[1]=2→1, sig[2]=3→1, sig[3]=2→1 = 4 times
+  4 mod 3 = 1 → bit 1 in ones ✓
+
+  Bit 0 count: sig[2]=3→1 = 1 time total (only 3 has bit 0 set)
+  1 mod 3 = 1 → bit 0 in ones ✓
+
+  Final: ones = 0b011 = 3 ✓  THE ANSWER IS CORRECT.
+</pre>
+        </div>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">verification — running the actual code</span>
+                <span class="code-lang">cpp</span>
+            </div>
+<pre><span class="pp">#include</span> <span class="str">&lt;iostream&gt;</span>
+<span class="pp">#include</span> <span class="str">&lt;vector&gt;</span>
+
+<span class="tp">int</span> <span class="fn">findUnique</span>(<span class="kw">const</span> std::vector&lt;<span class="tp">int</span>&gt;&amp; nums) {
+    <span class="tp">int</span> ones = <span class="num">0</span>, twos = <span class="num">0</span>;
+    <span class="kw">for</span> (<span class="tp">int</span> sig : nums) {
+        ones = (ones ^ sig) &amp; ~twos;
+        twos = (twos ^ sig) &amp; ~ones;
+    }
+    <span class="kw">return</span> ones;
+}
+
+<span class="tp">int</span> <span class="fn">main</span>() {
+    std::cout &lt;&lt; <span class="fn">findUnique</span>({<span class="num">2</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">2</span>})           &lt;&lt; <span class="str">"\n"</span>; <span class="cm">// 3</span>
+    std::cout &lt;&lt; <span class="fn">findUnique</span>({<span class="num">5</span>, <span class="num">5</span>, <span class="num">7</span>, <span class="num">5</span>, <span class="num">9</span>, <span class="num">9</span>, <span class="num">9</span>})  &lt;&lt; <span class="str">"\n"</span>; <span class="cm">// 7</span>
+    std::cout &lt;&lt; <span class="fn">findUnique</span>({<span class="num">0</span>, <span class="num">1</span>, <span class="num">0</span>, <span class="num">1</span>, <span class="num">0</span>, <span class="num">1</span>, <span class="num">99</span>}) &lt;&lt; <span class="str">"\n"</span>; <span class="cm">// 99</span>
+    <span class="kw">return</span> <span class="num">0</span>;
+}
+
+<span class="cm">/* Output:</span>
+<span class="cm">   3</span>
+<span class="cm">   7</span>
+<span class="cm">   99</span>
+<span class="cm">*/</span>
+
+<span class="cm">/* Complexity:                                            */</span>
+<span class="cm">/* Time:  O(n) — single pass through the array           */</span>
+<span class="cm">/* Space: O(1) — exactly two int variables, always       */</span>
+<span class="cm">/* Works for arrays of any size, from 3 to 3 billion     */</span></pre>
+        </div>
+
+        <div class="callout">
+            <p><strong data-pt="// O que você acabou de aprender" data-en="// What you just learned">// <span data-pt="O que você acabou de aprender" data-en="What you just learned">O que você acabou de aprender</span></strong></p>
+            <p class="lang-pt">Você não aprendeu um truque. Você aprendeu a pensar em variáveis
+            como <em>registradores de estado físico</em>. Cada bit é um contador independente.
+            XOR é um mecanismo toggle. AND NOT é uma trava de exclusão. Dois inteiros são
+            32 máquinas de estado rodando em paralelo. Este é exatamente o modelo mental
+            que engenheiros de hardware usam ao projetar circuitos digitais — e agora você
+            pode aplicar isso em software.</p>
+            <p class="lang-en" style="display:none">You did not learn a trick. You learned to think
+            of variables as <em>physical state registers</em>. Each bit is an independent counter.
+            XOR is a toggle mechanism. AND NOT is an exclusion lock. Two integers are 32 state
+            machines running in parallel. This is exactly the mental model hardware engineers use
+            when designing digital circuits — and now you can apply it in software.</p>
+        </div>
+    </section>
+
+    <div class="post-nav">
+        <a href="../posts.html">
+            <i class='bx bx-arrow-back'></i>
+            <span data-pt="Voltar aos posts" data-en="Back to posts">Voltar aos posts</span>
+        </a>
+        <a href="bitwise-operations.html">
+            <span data-pt="← Ver: Guia de Bitwise Ops" data-en="← See: Bitwise Ops Guide">← Ver: Guia de Bitwise Ops</span>
+        </a>
+    </div>
+
+</article>
+</main>
+
+<footer>
+    <p>&copy; 2026 Robert Souza Lages.</p>
+</footer>
+
+<script>
+    let currentLang = localStorage.getItem('lang') || 'pt';
+
+    function setLang(lang) {
+        currentLang = lang;
+        localStorage.setItem('lang', lang);
+        document.querySelectorAll('[data-pt], [data-en]').forEach(el => {
+            const val = el.getAttribute('data-' + lang);
+            if (val !== null) el.textContent = val;
+        });
+        document.querySelectorAll('.lang-pt').forEach(el => el.style.display = lang === 'pt' ? '' : 'none');
+        document.querySelectorAll('.lang-en').forEach(el => el.style.display = lang === 'en' ? '' : 'none');
+        document.documentElement.lang = lang === 'pt' ? 'pt-BR' : 'en';
+        document.querySelectorAll('.lang-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.id === 'btn-' + lang);
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        document.body.addEventListener('click', (e) => {
+            const btn = e.target.closest('.lang-btn');
+            if (btn && btn.id) setLang(btn.id.replace('btn-', ''));
+        });
+        const hamburger = document.querySelector('.hamburger');
+        const navLinks  = document.querySelector('.nav-links');
+        if (hamburger) hamburger.addEventListener('click', () => navLinks.classList.toggle('active'));
+        setLang(currentLang);
+    });
+</script>
+
+</body>
+</html>

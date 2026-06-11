@@ -48,5 +48,55 @@
     "description": "Da IDT ao IRETQ — Gate Descriptors, Interrupt vs Trap Gate, fluxo atômico da CPU, TSS/IST, ISR em Assembly+C, APIC vs PIC 8259 e Top Half/Bottom Half.",
     "description_en": "From IDT to IRETQ — Gate Descriptors, Interrupt vs Trap Gate, CPU atomic flow, TSS/IST, Assembly+C ISR, APIC vs PIC 8259, and Top Half/Bottom Half.",
     "url": "posts/idt-x86.html"
+  },
+  {
+    "id": "elf-binary-anatomy",
+    "title": "The Anatomy of a Binary: ELF Format & Process Memory Layout",
+    "category": "low-level",
+    "tag": "LOW-LEVEL",
+    "date": "2026-05-26",
+    "description": "Do gcc ao execve — cabeçalho ELF, seções (.text/.data/.bss/.rodata), segmentos PT_LOAD, mmap pelo kernel, rastreamento de variáveis C com readelf/nm e a cadeia W^X/ASLR/RELRO.",
+    "description_en": "From gcc to execve — ELF header, sections (.text/.data/.bss/.rodata), PT_LOAD segments, kernel mmap, tracing C variables with readelf/nm, and the W^X/ASLR/RELRO security chain.",
+    "url": "posts/elf-binary-anatomy.html"
+  },
+  {
+    "id": "real-to-long-mode",
+    "title": "The Great Awakening: Booting from Real Mode to Long Mode",
+    "category": "low-level",
+    "tag": "BARE-METAL",
+    "date": "2026-05-26",
+    "description": "Do reset vector ao kernel_main — os 3 saltos de modo do x86_64 (Real→Protected→Long), construção da GDT, page tables mínimas, CR0/CR3/CR4 e o bit LME no MSR EFER, com stubs Assembly comentados linha a linha.",
+    "description_en": "From the reset vector to kernel_main — the 3 x86_64 mode transitions (Real→Protected→Long), GDT construction, minimal page tables, CR0/CR3/CR4, and the LME bit in the EFER MSR, with line-by-line commented Assembly stubs.",
+    "url": "posts/real-to-long-mode.html"
+  },
+  {
+    "id": "memory-alignment-struct-padding",
+    "title": "Hardware Reality: Memory Alignment & Struct Padding in C/C++",
+    "category": "low-level",
+    "tag": "C/C++",
+    "date": "2026-05-26",
+    "description": "Por que char+int ocupa 8 bytes e não 5? Regras de alinhamento natural, padding automático do compilador, ordenação ótima de membros, __attribute__((packed)) vs alignas() e verificação com pahole.",
+    "description_en": "Why does char+int take 8 bytes, not 5? Natural alignment rules, automatic compiler padding, optimal member ordering, __attribute__((packed)) vs alignas(), and verification with pahole.",
+    "url": "posts/memory-alignment.html"
+  },
+  {
+    "id": "bitwise-operations-eli5",
+    "title": "Bitwise Operations in C: The ELI5 Guide for Hardware Manipulation",
+    "category": "engenharia",
+    "tag": "C/C++",
+    "date": "2026-05-26",
+    "description": "Operações bitwise sem mistério — AND, OR, XOR, NOT e shifts explicados com analogias do mundo real, os 4 padrões universais (set/clear/check/toggle) e um exemplo completo de registro de sensores industriais.",
+    "description_en": "Bitwise operations without the mystery — AND, OR, XOR, NOT and shifts explained through real-world analogies, the 4 universal patterns (set/clear/check/toggle), and a full industrial sensor register example.",
+    "url": "posts/bitwise-operations.html"
+  },
+  {
+    "id": "bitwise-state-machines",
+    "title": "Bitwise State Machines: The O(1) Memory Magic Trick",
+    "category": "low-level",
+    "tag": "ALGORITHMS",
+    "date": "2026-05-26",
+    "description": "O truque impossível: encontrar o número único num array onde todo o resto aparece 3 vezes, em O(n) tempo e O(1) espaço. Duas linhas de C++. 32 contadores paralelos. Uma máquina de estado construída com XOR e AND NOT.",
+    "description_en": "The impossible trick: find the unique number in an array where everything else appears 3 times, in O(n) time and O(1) space. Two lines of C++. 32 parallel counters. A state machine built from XOR and AND NOT.",
+    "url": "posts/bitwise-state-machines.html"
   }
 ]

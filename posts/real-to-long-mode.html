@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Great Awakening: Booting from Real Mode to Long Mode | Robert Souza Lages</title>
+    <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+    <link rel="stylesheet" href="style.css">
+    <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
+</head>
+<body>
+
+<nav class="navbar">
+    <div class="logo"><span>0x</span>Robert<span>_</span></div>
+    <ul class="nav-links">
+        <li><a href="../index.html"    data-pt="Sobre"    data-en="About">Sobre</a></li>
+        <li><a href="../resume.html"   data-pt="Currículo" data-en="Resume">Currículo</a></li>
+        <li><a href="../projects.html" data-pt="Projetos"  data-en="Projects">Projetos</a></li>
+        <li><a href="../posts.html" class="active">Posts</a></li>
+    </ul>
+    <div class="navbar-right">
+        <div class="lang-toggle">
+            <button class="lang-btn active" id="btn-pt">PT</button>
+            <button class="lang-btn"        id="btn-en">EN</button>
+        </div>
+        <div class="hamburger"><i class='bx bx-menu'></i></div>
+    </div>
+</nav>
+
+<main>
+<article class="post-wrapper">
+
+    <header class="post-header">
+        <div class="post-breadcrumb">
+            <a href="../posts.html">posts</a><span>/</span><span>real-to-long-mode</span>
+        </div>
+        <div class="post-meta">
+            <span class="post-tag">KERNEL</span>
+            <span class="post-tag">BARE-METAL</span>
+            <span class="post-tag">ARCHITECTURE</span>
+            <time class="post-date" datetime="2026-05-26">2026-05-26</time>
+        </div>
+        <h1 class="post-title">
+            <span data-pt="The Great Awakening:" data-en="The Great Awakening:">The Great Awakening:</span><br>
+            <span data-pt="Booting from Real Mode to Long Mode" data-en="Booting from Real Mode to Long Mode">Booting from Real Mode to Long Mode</span>
+        </h1>
+        <p class="post-summary lang-pt">
+            Quando um CPU x86_64 moderno é ligado, ele acorda em modo de 16 bits comportando-se
+            exatamente como um Intel 8086 de 1978. Este post documenta a jornada completa de
+            bootstrapping: os 3 saltos de modo de CPU (Real → Protected → Long), a construção
+            da GDT do zero, a configuração de paginação mínima e a manipulação dos registradores
+            de controle CR0, CR3, CR4 e do MSR EFER.
+        </p>
+        <p class="post-summary lang-en" style="display:none">
+            When a modern x86_64 CPU powers on, it wakes up in 16-bit mode behaving exactly like
+            an Intel 8086 from 1978. This post documents the complete bootstrapping journey: the 3
+            CPU mode transitions (Real → Protected → Long), building a GDT from scratch, setting up
+            minimal paging, and manipulating the CR0, CR3, CR4 control registers and the EFER MSR.
+        </p>
+
+        <div class="toc lang-pt">
+            <div class="toc-title">// ÍNDICE</div>
+            <ol>
+                <li><a href="#paradoxo">O Paradoxo do Boot: 2024 acorda em 1978</a></li>
+                <li><a href="#real-mode">Real Mode (16-bit): o confinamento do 8086</a></li>
+                <li><a href="#protected-mode">Protected Mode (32-bit): a GDT e o CR0</a></li>
+                <li><a href="#long-mode">Long Mode (64-bit): paginação, PAE e EFER</a></li>
+                <li><a href="#codigo">Assembly: os stubs exatos de transição</a></li>
+            </ol>
+        </div>
+        <div class="toc lang-en" style="display:none">
+            <div class="toc-title">// TABLE OF CONTENTS</div>
+            <ol>
+                <li><a href="#paradoxo">The Boot Paradox: 2024 waking up in 1978</a></li>
+                <li><a href="#real-mode">Real Mode (16-bit): the 8086 confinement</a></li>
+                <li><a href="#protected-mode">Protected Mode (32-bit): the GDT and CR0</a></li>
+                <li><a href="#long-mode">Long Mode (64-bit): paging, PAE, and EFER</a></li>
+                <li><a href="#codigo">Assembly: the exact transition stubs</a></li>
+            </ol>
+        </div>
+    </header>
+
+    <!-- 01 — O PARADOXO -->
+    <section class="post-section" id="paradoxo">
+        <div class="section-label">01</div>
+        <h2 data-pt="O Paradoxo do Boot: 2024 acorda em 1978"
+            data-en="The Boot Paradox: 2024 waking up in 1978">
+            <span data-pt="O Paradoxo do Boot" data-en="The Boot Paradox">O Paradoxo do Boot</span>
+        </h2>
+
+        <p class="lang-pt">
+            Pressione o botão de liga do seu servidor com 64 núcleos, 512 GB de RAM e CPUs
+            rodando a 5 GHz. No instante em que o sinal RESET# é desassertado pelo chipset, cada
+            núcleo acorda num estado que data de 1978: <strong style="color:#fff">16-bit Real Mode</strong>,
+            com um espaço de endereçamento de exatos 1 MB, sem proteção de memória, sem paginação,
+            sem anéis de privilégio. O processador mais avançado da Intel, ao ligar, é
+            indistinguível de um 8086 original.
+        </p>
+        <p class="lang-en" style="display:none">
+            Press the power button on your 64-core server with 512 GB of RAM and CPUs running at
+            5 GHz. The instant the RESET# signal is deasserted by the chipset, every core wakes up
+            in a state that dates back to 1978: <strong style="color:#fff">16-bit Real Mode</strong>,
+            with an address space of exactly 1 MB, no memory protection, no paging, no privilege
+            rings. The most advanced Intel processor, on power-on, is indistinguishable from an
+            original 8086.
+        </p>
+
+        <p class="lang-pt">
+            Isso não é um bug. É compatibilidade retroativa forçada — a Intel não pode quebrar o
+            boot de nenhum sistema que existiu nos últimos 46 anos. Então todo sistema operacional
+            moderno, todo hypervisor, todo kernel precisa resolver o mesmo problema que o GRUB,
+            o Linux e o Windows Boot Manager resolvem: <em>acordar nesse ambiente antediluviano
+            e escalar para o modo de 64 bits o mais rápido possível</em>.
+        </p>
+        <p class="lang-en" style="display:none">
+            This is not a bug. It is forced backward compatibility — Intel cannot break the boot of
+            any system that has existed in the last 46 years. So every modern OS, every hypervisor,
+            every kernel must solve the same problem that GRUB, Linux, and the Windows Boot Manager
+            solve: <em>wake up in this antediluvian environment and scale up to 64-bit mode as fast
+            as possible</em>.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="estado do CPU no power-on reset (Intel SDM Vol.3 §9.1.1)" data-en="CPU state at power-on reset (Intel SDM Vol.3 §9.1.1)">estado do CPU no power-on reset</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  At RESET# deassertion — every x86/x86_64 CPU ever made:
+
+  CS  = 0xF000      (code segment)
+  IP  = 0xFFF0      (instruction pointer)
+  EIP = 0x0000FFF0
+
+  Physical address of first instruction:
+    = (CS base 0xFFFF0000) + IP 0xFFF0 = 0xFFFFFFF0   ← top of 4GB
+
+  The byte at 0xFFFFFFF0 is a JMP FAR into the BIOS/UEFI firmware ROM.
+  ─────────────────────────────────────────────────────────────────────
+
+  EFLAGS = 0x00000002   (only bit 1 reserved=1, everything else clear)
+  CR0    = 0x60000010   (PE=0: Real Mode active, PG=0: paging disabled)
+  GDTR   = base=0, limit=0xFFFF  (no GDT configured)
+  IDTR   = base=0, limit=0xFFFF  (IVT at 0x0000)
+
+  All general-purpose registers: undefined
+</pre>
+        </div>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="a jornada completa de bootstrapping" data-en="the complete bootstrapping journey">a jornada completa de bootstrapping</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  POWER ON
+     │
+     ▼
+  [RESET VECTOR]  CS:IP = F000:FFF0  →  JMP to BIOS/UEFI firmware
+     │             16-bit Real Mode
+     ▼
+  [BIOS/UEFI]     POST, hardware init, find bootable device
+     │             Still in Real Mode (BIOS) or already in 64-bit (UEFI)
+     ▼
+  [BOOTLOADER]    GRUB stage1: loaded from MBR at 0x7C00
+     │             Switches to Protected Mode, loads stage2
+     ▼
+  [STAGE2]        Loads kernel image, sets up paging, enters Long Mode
+     │
+     ┌────────────────────────────────┐
+     │  Real Mode  →  Protected Mode  →  Long Mode  →  kernel _start  │
+     │  (16-bit)       (32-bit)           (64-bit)                     │
+     └────────────────────────────────┘
+</pre>
+        </div>
+    </section>
+
+    <!-- 02 — REAL MODE -->
+    <section class="post-section" id="real-mode">
+        <div class="section-label">02</div>
+        <h2 data-pt="Real Mode (16-bit): o confinamento do 8086"
+            data-en="Real Mode (16-bit): the 8086 confinement">
+            Real Mode (16-bit): <span data-pt="o confinamento do 8086" data-en="the 8086 confinement">o confinamento do 8086</span>
+        </h2>
+
+        <p class="lang-pt">
+            O 8086 tinha um barramento de endereços de 20 bits — 2²⁰ = 1.048.576 bytes =
+            exatos <strong style="color:#fff">1 MB</strong>. Os registradores eram todos de
+            16 bits, então o processador usava um esquema de <em>segmentação</em> para alcançar
+            o espaço completo: endereço físico = <code>segment × 16 + offset</code>.
+        </p>
+        <p class="lang-en" style="display:none">
+            The 8086 had a 20-bit address bus — 2²⁰ = 1,048,576 bytes = exactly
+            <strong style="color:#fff">1 MB</strong>. Registers were all 16 bits, so the processor
+            used a <em>segmentation</em> scheme to reach the full space: physical address =
+            <code>segment × 16 + offset</code>.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">Real Mode address translation</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  Segment register (16-bit):  0x1234
+  Offset (16-bit):            0x5678
+                              ──────────────────────────────────────
+  Physical address = (0x1234 << 4) + 0x5678
+                   =  0x12340       + 0x5678
+                   =  0x179B8          ← 20-bit physical address
+
+  Same offset, different segment → completely different physical address.
+  No hardware enforces who can access what: ALL code accesses ALL memory.
+
+  Maximum addressable:  0xFFFF:0xFFFF = 0xFFFF0 + 0xFFFF = 0x10FFEF
+  Address bus limit:    0xFFFFF (20 bits)
+  Addresses above 0xFFFFF "wrap around" to 0x00000 — the infamous A20 issue.
+</pre>
+        </div>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="mapa de memória do Real Mode — os primeiros 1 MB" data-en="Real Mode memory map — the first 1 MB">Real Mode memory map — the first 1 MB</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  0x100000 (1 MB) ─ ─ ─ ─ ─ ─ ─ ─  address wrap-around above here
+  0x0FFFFF        ┌──────────────────────────────┐
+                  │  BIOS ROM  (64 KB)           │ 0xF0000–0xFFFFF
+                  ├──────────────────────────────┤
+                  │  ISA Memory Hole             │ 0xE0000–0xEFFFF
+                  ├──────────────────────────────┤
+                  │  Expansion ROMs (PCI/ISA)    │ 0xC0000–0xDFFFF
+                  ├──────────────────────────────┤
+                  │  Video RAM (VGA framebuffer) │ 0xA0000–0xBFFFF
+  0x09FFFF        ├──────────────────────────────┤
+                  │  Conventional RAM (~640 KB)  │ free for use
+  0x007C00        ├ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─│ MBR loaded here by BIOS
+  0x000500        ├──────────────────────────────┤
+                  │  BIOS Data Area (BDA)        │ 0x0400–0x04FF (256 bytes)
+  0x000400        ├──────────────────────────────┤
+                  │  IVT: 256 × 4-byte vectors  │ 0x0000–0x03FF (1 KB)
+  0x000000        └──────────────────────────────┘
+</pre>
+        </div>
+
+        <h3>// <span data-pt="O problema da linha A20" data-en="The A20 line problem">O problema da linha A20</span></h3>
+
+        <p class="lang-pt">
+            Quando a IBM lançou o PC/AT com o 286, o barramento de endereços expandiu para 24 bits.
+            Mas alguns programas DOS dependiam do <em>wrap-around</em> acima de 1 MB (onde
+            <code>0xFFFF:0xFFFF + 1</code> voltava para <code>0x00000</code>). Para manter
+            compatibilidade, a IBM adicionou um <em>gate</em> elétrico na linha de endereço 20 (A20)
+            — controlado, bizarramente, pelo <strong style="color:#fff">controlador do teclado</strong>.
+            Todo bootloader moderno precisa habilitar a linha A20 antes de acessar qualquer
+            memória acima de 1 MB, caso contrário o sistema operará com a linha A20 mascarada
+            para zero.
+        </p>
+        <p class="lang-en" style="display:none">
+            When IBM shipped the PC/AT with the 286, the address bus expanded to 24 bits. But some
+            DOS programs relied on the wrap-around above 1 MB (where <code>0xFFFF:0xFFFF + 1</code>
+            looped back to <code>0x00000</code>). For compatibility, IBM added an electrical gate on
+            address line 20 (A20) — controlled, bizarrely, by the
+            <strong style="color:#fff">keyboard controller</strong>. Every modern bootloader must
+            enable the A20 line before accessing any memory above 1 MB, otherwise the system will
+            operate with A20 masked to zero.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">enable_a20 — fast A20 via port 0x92</span>
+                <span class="code-lang">nasm</span>
+            </div>
+<pre>enable_a20:
+    <span class="kw">in</span>   <span class="reg">al</span>, <span class="num">0x92</span>          <span class="cm">; read System Control Port A</span>
+    <span class="kw">or</span>   <span class="reg">al</span>, <span class="num">0x02</span>          <span class="cm">; set bit 1 = A20 enable</span>
+    <span class="kw">and</span>  <span class="reg">al</span>, <span class="num">0xFE</span>          <span class="cm">; clear bit 0 = do NOT reset system</span>
+    <span class="kw">out</span>  <span class="num">0x92</span>, <span class="reg">al</span>          <span class="cm">; write back — A20 now enabled</span>
+    <span class="kw">ret</span>
+
+    <span class="cm">; Alternative method: BIOS INT 15h, AX=2401h (call before leaving Real Mode)</span>
+    <span class="cm">; Alternative method: keyboard controller port 0x64/0x60 (slower, but universal)</span></pre>
+        </div>
+
+        <div class="callout warn">
+            <p><strong data-pt="Limitações do Real Mode — sem defesa nenhuma" data-en="Real Mode limitations — zero defenses">Real Mode limitations — <span data-pt="sem defesa nenhuma" data-en="zero defenses">sem defesa nenhuma</span></strong></p>
+            <p class="lang-pt">Em Real Mode: qualquer instrução pode escrever em qualquer endereço
+            físico — incluindo a IVT em <code>0x0000</code>, a BIOS ROM, ou o código do próprio
+            bootloader. Não há anéis de privilégio (ring 0/3 não existem). Não há paginação nem
+            proteção de páginas. Uma string de <code>memset(0, 0, 1024*1024)</code> apagaria o
+            1 MB inteiro sem nenhuma resistência do hardware. É por isso que a saída do Real Mode
+            é a primeira coisa que qualquer bootloader faz.</p>
+            <p class="lang-en" style="display:none">In Real Mode: any instruction can write to any
+            physical address — including the IVT at <code>0x0000</code>, the BIOS ROM, or the
+            bootloader's own code. There are no privilege rings (ring 0/3 do not exist). There is no
+            paging or page protection. A <code>memset(0, 0, 1024*1024)</code> would wipe the entire
+            1 MB without any hardware resistance. This is why leaving Real Mode is the first thing any
+            bootloader does.</p>
+        </div>
+    </section>
+
+    <!-- 03 — PROTECTED MODE -->
+    <section class="post-section" id="protected-mode">
+        <div class="section-label">03</div>
+        <h2 data-pt="Protected Mode (32-bit): a GDT e o CR0"
+            data-en="Protected Mode (32-bit): the GDT and CR0">
+            Protected Mode (32-bit): <span data-pt="a GDT e o CR0" data-en="the GDT and CR0">a GDT e o CR0</span>
+        </h2>
+
+        <p class="lang-pt">
+            Para ativar o Protected Mode, o bootloader precisa cumprir um protocolo preciso em
+            4 passos. Pular ou inverter qualquer passo resulta em uma exceção de proteção geral
+            (#GP) ou, mais provavelmente, em um triple fault silencioso e reset da máquina.
+        </p>
+        <p class="lang-en" style="display:none">
+            To activate Protected Mode, the bootloader must follow a precise 4-step protocol.
+            Skipping or reordering any step results in a general protection fault (#GP) or, more
+            likely, a silent triple fault and machine reset.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="sequência obrigatória para entrar em Protected Mode" data-en="mandatory sequence to enter Protected Mode">mandatory sequence to enter Protected Mode</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  1. CLI              — disable maskable interrupts (IVT is no longer valid)
+  2. LGDT [desc]      — load the GDT register with base + limit of the GDT
+  3. MOV CR0, ...     — set CR0.PE (bit 0) to enable protection
+  4. JMP FAR 0x08:pm  — flush the instruction pipeline with a far jump
+                         loads CS with a valid code segment selector from GDT
+</pre>
+        </div>
+
+        <h3>// GDT — <span data-pt="Global Descriptor Table: o mapa de segmentos" data-en="Global Descriptor Table: the segment map">Global Descriptor Table</span></h3>
+
+        <p class="lang-pt">
+            A <strong style="color:#fff">GDT</strong> é uma tabela residente em memória onde cada
+            entrada de 8 bytes (um <em>segment descriptor</em>) descreve um segmento de memória:
+            seu endereço base, seu limite e seus atributos de acesso. O registrador <code>GDTR</code>
+            é carregado com a instrução <code>LGDT</code> e aponta para essa tabela. O kernel não
+            usa segmentação para isolamento (usa paginação), mas a GDT ainda precisa existir —
+            o hardware exige descritores válidos para <code>CS</code>, <code>SS</code> e os
+            demais registradores de segmento.
+        </p>
+        <p class="lang-en" style="display:none">
+            The <strong style="color:#fff">GDT</strong> is a memory-resident table where each 8-byte
+            entry (a <em>segment descriptor</em>) describes a memory segment: its base address, its
+            limit, and its access attributes. The <code>GDTR</code> register is loaded with the
+            <code>LGDT</code> instruction and points to this table. The kernel does not use
+            segmentation for isolation (it uses paging), but the GDT must still exist — hardware
+            requires valid descriptors for <code>CS</code>, <code>SS</code>, and the other segment
+            registers.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">8-byte segment descriptor layout</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  63      56 55   52 51  48 47      40 39       16 15         0
+  ┌─────────┬───────┬──────┬──────────┬───────────┬────────────┐
+  │ Base    │ Flags │ Lim  │  Access  │   Base    │   Limit    │
+  │ [31:24] │ [3:0] │[19:16│   Byte   │  [23:0]   │  [15:0]    │
+  └─────────┴───────┴──────┴──────────┴───────────┴────────────┘
+               │               │
+               │               └─ Bit 7 (P):   Present (1 = valid)
+               │                  Bits 6-5 (DPL): Privilege (0=ring0, 3=ring3)
+               │                  Bit 4 (S):   1=code/data, 0=system (TSS,gate)
+               │                  Bit 3 (E):   1=executable (code), 0=data
+               │                  Bit 2 (DC):  Direction (data) / Conforming (code)
+               │                  Bit 1 (RW):  Writable (data) / Readable (code)
+               │                  Bit 0 (A):   Accessed (CPU sets on use)
+               │
+               └─ Bit 3 (G):   Granularity: 1=limit in 4KB units, 0=bytes
+                  Bit 2 (D/B): 1=32-bit operands, 0=16-bit
+                  Bit 1 (L):   1=64-bit code (Long Mode), D/B must be 0
+                  Bit 0 (AVL): Available for OS use
+</pre>
+        </div>
+
+        <p class="lang-pt">
+            Para o modelo flat de 32 bits (base=0, limit=4GB — o que todo sistema moderno usa),
+            os descritores de código e dados são quase idênticos, diferindo apenas no bit
+            <code>E</code> (Executable) do Access Byte. O selector que vai em <code>CS</code>
+            deve apontar para um descriptor com <code>E=1</code>; os seletores em
+            <code>DS/ES/SS</code> devem apontar para descritores com <code>E=0</code>.
+        </p>
+        <p class="lang-en" style="display:none">
+            For the 32-bit flat model (base=0, limit=4GB — what every modern system uses), the code
+            and data descriptors are nearly identical, differing only in the <code>E</code> (Executable)
+            bit of the Access Byte. The selector loaded into <code>CS</code> must point to a descriptor
+            with <code>E=1</code>; selectors in <code>DS/ES/SS</code> must point to descriptors with
+            <code>E=0</code>.
+        </p>
+
+        <h3>// CR0 — <span data-pt="o interruptor mestre do modo de proteção" data-en="the master switch for protection mode">o interruptor mestre do modo de proteção</span></h3>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">CR0 register — key bits</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  Bit 31 (PG):  Paging Enable          — activates Long Mode when LME=1 (see §04)
+  Bit 30 (CD):  Cache Disable
+  Bit 29 (NW):  Not Write-through
+  Bit 18 (AM):  Alignment Mask
+  Bit 16 (WP):  Write Protect          — ring0 cannot write to RO pages (security)
+  Bit  5 (NE):  Numeric Error
+  Bit  4 (ET):  Extension Type
+  Bit  3 (TS):  Task Switched
+  Bit  2 (EM):  Emulation (FPU)
+  Bit  1 (MP):  Monitor Coprocessor
+  Bit  0 (PE):  Protection Enable  ←── SET THIS to leave Real Mode
+                                        clear = Real Mode | set = Protected Mode
+</pre>
+        </div>
+    </section>
+
+    <!-- 04 — LONG MODE -->
+    <section class="post-section" id="long-mode">
+        <div class="section-label">04</div>
+        <h2 data-pt="Long Mode (64-bit): paginação, PAE e EFER"
+            data-en="Long Mode (64-bit): paging, PAE, and EFER">
+            Long Mode (64-bit): <span data-pt="paginação, PAE e EFER" data-en="paging, PAE, and EFER">paginação, PAE e EFER</span>
+        </h2>
+
+        <p class="lang-pt">
+            A transição para Long Mode é mais complexa que a entrada em Protected Mode porque
+            <strong style="color:#fff">Long Mode requer paginação ativa</strong>. Você não pode
+            habilitar o Long Mode e configurar as page tables depois — o hardware exige que as
+            tabelas estejam prontas antes do bit PG ser setado. A sequência tem 5 passos,
+            e a ordem é mandatória.
+        </p>
+        <p class="lang-en" style="display:none">
+            The transition to Long Mode is more complex than entering Protected Mode because
+            <strong style="color:#fff">Long Mode requires active paging</strong>. You cannot enable
+            Long Mode and set up page tables afterward — the hardware requires the tables to be
+            ready before the PG bit is set. The sequence has 5 steps, and the order is mandatory.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="sequência mandatória para Long Mode (Intel SDM §9.8.5)" data-en="mandatory Long Mode sequence (Intel SDM §9.8.5)">mandatory Long Mode sequence (Intel SDM §9.8.5)</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  From 32-bit Protected Mode:
+
+  1. Build paging structures in physical memory (PML4 → PDPT → PD → PT or 2MB pages)
+     Load CR3 with physical address of PML4 table
+
+  2. Set CR4.PAE (bit 5) — Physical Address Extension
+     Required: Long Mode uses 4-level page tables, PAE must be on
+
+  3. Set EFER.LME (bit 8) via WRMSR to MSR 0xC0000080
+     "Long Mode Enable" — signals intent, but does NOT activate Long Mode yet
+
+  4. Set CR0.PG (bit 31) AND ensure CR0.PE (bit 0) is still set
+     THIS activates Long Mode: hardware sets EFER.LMA (bit 10) automatically
+
+  5. JMP FAR to 64-bit code segment (GDT descriptor with L=1, D/B=0)
+     Flushes the pipeline; CPU is now in IA-32e (64-bit) mode
+</pre>
+        </div>
+
+        <h3>// EFER — <span data-pt="Extended Feature Enable Register" data-en="Extended Feature Enable Register">Extended Feature Enable Register</span></h3>
+
+        <p class="lang-pt">
+            O <strong style="color:#fff">EFER</strong> (MSR <code>0xC0000080</code>) é o
+            registrador que habilita features avançadas da arquitetura. Ele é acessado
+            exclusivamente via <code>RDMSR</code>/<code>WRMSR</code> — não existe instrução
+            direta como para CR0. Os três bits relevantes ao boot são:
+        </p>
+        <p class="lang-en" style="display:none">
+            The <strong style="color:#fff">EFER</strong> (MSR <code>0xC0000080</code>) is the register
+            that enables advanced architectural features. It is accessed exclusively via
+            <code>RDMSR</code>/<code>WRMSR</code> — there is no direct instruction as with CR0.
+            The three bits relevant to boot are:
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">EFER MSR (0xC0000080) — key bits</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  Bit 11 (NXE): No-Execute Enable  — enables XD/NX bit in PTEs (PTE bit 63)
+  Bit 10 (LMA): Long Mode Active   — READ-ONLY: CPU sets this when PG is set with LME=1
+  Bit  8 (LME): Long Mode Enable   — YOU set this in step 3 (desire, not yet active)
+  Bit  0 (SCE): SYSCALL Enable     — enables SYSCALL/SYSRET instructions
+
+  LME=1 alone does nothing.
+  LME=1 + CR0.PG=1  →  CPU sets LMA=1  →  Long Mode is ACTIVE.
+</pre>
+        </div>
+
+        <h3>// <span data-pt="Page tables mínimas para o boot" data-en="Minimal page tables for boot">Page tables mínimas para o boot</span></h3>
+
+        <p class="lang-pt">
+            Para entrar em Long Mode, as page tables precisam fazer pelo menos um mapeamento
+            válido para o código que está executando (o bootloader em si). A solução mais
+            simples é um <em>identity mapping</em> da RAM baixa usando páginas de 2 MB
+            (huge pages com bit PS=1 no PD entry), evitando a necessidade de uma quarta
+            camada de tabela (PT).
+        </p>
+        <p class="lang-en" style="display:none">
+            To enter Long Mode, the page tables must provide at least one valid mapping for the
+            executing code (the bootloader itself). The simplest solution is an <em>identity mapping</em>
+            of low RAM using 2 MB pages (huge pages with PS=1 in the PD entry), avoiding the need
+            for a fourth table layer (PT).
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="estrutura de paginação mínima para Long Mode" data-en="minimal paging structure for Long Mode">minimal paging structure for Long Mode</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  Physical memory layout of page tables (placed at known addresses):
+
+  0x1000: PML4 Table   (4 KB, 512 × 8-byte entries)
+            entry[0] = 0x2003  ← points to PDPT at 0x2000, flags: P=1 RW=1
+  0x2000: PDPT Table   (4 KB, 512 × 8-byte entries)
+            entry[0] = 0x3003  ← points to PD at 0x3000,   flags: P=1 RW=1
+  0x3000: PD Table     (4 KB, 512 × 8-byte entries)
+            entry[0] = 0x0083  ← 2MB page at phys 0x000000, flags: P=1 RW=1 PS=1
+            entry[1] = 0x20083 ← 2MB page at phys 0x200000, flags: P=1 RW=1 PS=1
+            ...
+
+  PDE entry flags for 2MB page:
+  Bit  7 (PS):  Page Size = 1  →  this is a 2MB page, no PT needed
+  Bit  1 (RW):  Read/Write = 1
+  Bit  0 (P):   Present = 1
+  Bits 20:21 = physical address bits [31:21] of the 2MB-aligned frame
+
+  CR3 = 0x1000  (physical address of PML4)
+  This gives an identity map: vaddr 0x000000–0x1FFFFF → paddr 0x000000–0x1FFFFF
+</pre>
+        </div>
+
+        <div class="callout">
+            <p><strong data-pt="Por que paginação é obrigatória para Long Mode?" data-en="Why is paging mandatory for Long Mode?">Por que paginação é obrigatória para Long Mode?</strong></p>
+            <p class="lang-pt">Em Long Mode, a segmentação é efetivamente desabilitada: base e limite
+            dos descritores de segmento são ignorados (exceto para FS/GS usados em TLS). Toda
+            proteção de memória, isolamento entre processos e entre kernel/usuário passa
+            <em>exclusivamente</em> pelas page tables. Por design, o hardware não permite Long Mode
+            sem paginação ativa — seria um modo sem nenhuma proteção de memória operacional.</p>
+            <p class="lang-en" style="display:none">In Long Mode, segmentation is effectively
+            disabled: the base and limit of segment descriptors are ignored (except for FS/GS used
+            for TLS). All memory protection, process isolation, and kernel/user separation passes
+            <em>exclusively</em> through the page tables. By design, hardware does not allow Long
+            Mode without active paging — it would be a mode with no operational memory protection.</p>
+        </div>
+    </section>
+
+    <!-- 05 — CÓDIGO -->
+    <section class="post-section" id="codigo">
+        <div class="section-label">05</div>
+        <h2 data-pt="Assembly: os stubs exatos de transição"
+            data-en="Assembly: the exact transition stubs">
+            Assembly: <span data-pt="os stubs exatos de transição" data-en="the exact transition stubs">os stubs exatos de transição</span>
+        </h2>
+
+        <p class="lang-pt">
+            Os três blocos abaixo compõem um bootloader mínimo funcional. O código está em NASM,
+            comentado linha por linha. A ordem é: (1) GDT para as três arquiteturas, (2) transição
+            Real → Protected Mode, (3) transição Protected → Long Mode.
+        </p>
+        <p class="lang-en" style="display:none">
+            The three blocks below compose a functional minimal bootloader. The code is in NASM,
+            commented line by line. The order is: (1) GDT for all three architectures, (2) Real → 
+            Protected Mode transition, (3) Protected → Long Mode transition.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">gdt.asm — GDT definitions for all three modes</span>
+                <span class="code-lang">nasm</span>
+            </div>
+<pre>align 8
+<span class="fn">gdt_start</span>:
+
+<span class="cm">; ── Descriptor 0x00: Null (mandatory — CPU requires entry 0 to be null) ──</span>
+    <span class="kw">dq</span> <span class="num">0x0000000000000000</span>
+
+<span class="cm">; ── Descriptor 0x08: 32-bit Code Segment ─────────────────────────────────</span>
+<span class="cm">; Base=0x000000, Limit=0xFFFFF (×4KB = 4GB), DPL=0, Execute+Read</span>
+    <span class="kw">dw</span> <span class="num">0xFFFF</span>     <span class="cm">; Limit[15:0]  = 0xFFFF</span>
+    <span class="kw">dw</span> <span class="num">0x0000</span>     <span class="cm">; Base [15:0]  = 0x0000</span>
+    <span class="kw">db</span> <span class="num">0x00</span>       <span class="cm">; Base [23:16] = 0x00</span>
+    <span class="kw">db</span> <span class="num">0x9A</span>       <span class="cm">; Access: P=1 DPL=0 S=1 E=1 DC=0 RW=1 A=0 → 1001 1010</span>
+    <span class="kw">db</span> <span class="num">0xCF</span>       <span class="cm">; Flags+Lim[19:16]: G=1 D/B=1 L=0 AVL=0 | 1111 → 1100 1111</span>
+    <span class="kw">db</span> <span class="num">0x00</span>       <span class="cm">; Base [31:24] = 0x00</span>
+
+<span class="cm">; ── Descriptor 0x10: 32-bit Data Segment ─────────────────────────────────</span>
+<span class="cm">; Same as code, but E=0 (data), RW=1 (writable)</span>
+    <span class="kw">dw</span> <span class="num">0xFFFF</span>
+    <span class="kw">dw</span> <span class="num">0x0000</span>
+    <span class="kw">db</span> <span class="num">0x00</span>
+    <span class="kw">db</span> <span class="num">0x92</span>       <span class="cm">; Access: P=1 DPL=0 S=1 E=0 DC=0 RW=1 A=0 → 1001 0010</span>
+    <span class="kw">db</span> <span class="num">0xCF</span>
+    <span class="kw">db</span> <span class="num">0x00</span>
+
+<span class="cm">; ── Descriptor 0x18: 64-bit Code Segment (Long Mode) ─────────────────────</span>
+<span class="cm">; Base and Limit are IGNORED in 64-bit mode (flat model enforced by hardware)</span>
+<span class="cm">; Critical: L=1 (bit 1 of flags byte) and D/B=0</span>
+    <span class="kw">dw</span> <span class="num">0x0000</span>     <span class="cm">; Limit (ignored)</span>
+    <span class="kw">dw</span> <span class="num">0x0000</span>     <span class="cm">; Base  (ignored)</span>
+    <span class="kw">db</span> <span class="num">0x00</span>       <span class="cm">; Base  (ignored)</span>
+    <span class="kw">db</span> <span class="num">0x9A</span>       <span class="cm">; Access: P=1 DPL=0 S=1 E=1 DC=0 RW=1 A=0</span>
+    <span class="kw">db</span> <span class="num">0xA0</span>       <span class="cm">; Flags: G=1 D/B=0 L=1 AVL=0 | 0000 → 1010 0000</span>
+    <span class="kw">db</span> <span class="num">0x00</span>
+
+<span class="cm">; ── Descriptor 0x20: 64-bit Data Segment ─────────────────────────────────</span>
+    <span class="kw">dw</span> <span class="num">0x0000</span>
+    <span class="kw">dw</span> <span class="num">0x0000</span>
+    <span class="kw">db</span> <span class="num">0x00</span>
+    <span class="kw">db</span> <span class="num">0x92</span>       <span class="cm">; Access: P=1 DPL=0 S=1 E=0 DC=0 RW=1 A=0</span>
+    <span class="kw">db</span> <span class="num">0x00</span>       <span class="cm">; Flags: G=0 D/B=0 L=0 (data segments irrelevant in LM)</span>
+    <span class="kw">db</span> <span class="num">0x00</span>
+
+<span class="fn">gdt_end</span>:
+
+<span class="cm">; GDTR descriptor — loaded by LGDT instruction</span>
+<span class="fn">gdt_descriptor</span>:
+    <span class="kw">dw</span> gdt_end - gdt_start - <span class="num">1</span>   <span class="cm">; 16-bit limit (size - 1)</span>
+    <span class="kw">dq</span> gdt_start                  <span class="cm">; 64-bit base address</span></pre>
+        </div>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">real_to_pm.asm — Real Mode → Protected Mode transition</span>
+                <span class="code-lang">nasm</span>
+            </div>
+<pre><span class="kw">bits</span> <span class="num">16</span>
+<span class="kw">org</span>  <span class="num">0x7C00</span>             <span class="cm">; BIOS loads the MBR here</span>
+
+<span class="fn">start</span>:
+    <span class="cm">; ── Step 0: Disable interrupts ────────────────────────────────────────</span>
+    <span class="cm">; The IVT at 0x0000 is only valid in Real Mode. Once we switch,</span>
+    <span class="cm">; any interrupt before the IDT is loaded would be catastrophic.</span>
+    <span class="kw">cli</span>
+
+    <span class="cm">; ── Step 0b: Enable A20 line ──────────────────────────────────────────</span>
+    <span class="kw">in</span>   <span class="reg">al</span>, <span class="num">0x92</span>
+    <span class="kw">or</span>   <span class="reg">al</span>, <span class="num">0x02</span>
+    <span class="kw">and</span>  <span class="reg">al</span>, <span class="num">0xFE</span>
+    <span class="kw">out</span>  <span class="num">0x92</span>, <span class="reg">al</span>
+
+    <span class="cm">; ── Step 1: Load the GDT ──────────────────────────────────────────────</span>
+    <span class="cm">; LGDT reads a 6-byte structure: 2-byte limit + 4-byte (or 8-byte) base</span>
+    <span class="kw">lgdt</span> [gdt_descriptor]
+
+    <span class="cm">; ── Step 2: Set PE bit in CR0 ─────────────────────────────────────────</span>
+    <span class="cm">; CR0 cannot be loaded with an immediate — must go through a GPR</span>
+    <span class="kw">mov</span>  <span class="reg">eax</span>, <span class="reg">cr0</span>
+    <span class="kw">or</span>   <span class="reg">eax</span>, <span class="num">0x1</span>          <span class="cm">; set bit 0 = PE (Protection Enable)</span>
+    <span class="kw">mov</span>  <span class="reg">cr0</span>, <span class="reg">eax</span>
+    <span class="cm">; We are NOW in Protected Mode — but CS still has the Real Mode value.</span>
+    <span class="cm">; The processor is in a hybrid state until the far jump.</span>
+
+    <span class="cm">; ── Step 3: Far jump — flush pipeline + load CS from GDT ─────────────</span>
+    <span class="cm">; 0x08 = selector for GDT entry 1 (32-bit code segment)</span>
+    <span class="cm">; The far jump atomically:  loads CS ← 0x08  AND  EIP ← pm32_entry</span>
+    <span class="kw">jmp</span>  <span class="num">0x08</span>:<span class="fn">pm32_entry</span>
+
+<span class="kw">bits</span> <span class="num">32</span>
+<span class="fn">pm32_entry</span>:
+    <span class="cm">; ── Step 4: Reload all data segment registers ─────────────────────────</span>
+    <span class="cm">; 0x10 = selector for GDT entry 2 (32-bit data segment)</span>
+    <span class="kw">mov</span>  <span class="reg">ax</span>,  <span class="num">0x10</span>
+    <span class="kw">mov</span>  <span class="reg">ds</span>,  <span class="reg">ax</span>
+    <span class="kw">mov</span>  <span class="reg">es</span>,  <span class="reg">ax</span>
+    <span class="kw">mov</span>  <span class="reg">fs</span>,  <span class="reg">ax</span>
+    <span class="kw">mov</span>  <span class="reg">gs</span>,  <span class="reg">ax</span>
+    <span class="kw">mov</span>  <span class="reg">ss</span>,  <span class="reg">ax</span>
+    <span class="kw">mov</span>  <span class="reg">esp</span>, <span class="num">0x90000</span>       <span class="cm">; set up a stack below the Real Mode map</span>
+
+    <span class="cm">; 32-bit Protected Mode is active.</span>
+    <span class="cm">; Full 4GB address space, privilege rings, hardware exceptions available.</span>
+    <span class="kw">call</span> <span class="fn">enter_long_mode</span>   <span class="cm">; proceed to 64-bit</span></pre>
+        </div>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">pm_to_lm.asm — Protected Mode → Long Mode transition</span>
+                <span class="code-lang">nasm</span>
+            </div>
+<pre><span class="kw">bits</span> <span class="num">32</span>
+
+<span class="fn">enter_long_mode</span>:
+    <span class="cm">; ── Step 1: Build identity-mapped page tables ─────────────────────────</span>
+    <span class="cm">; PML4 at 0x1000, PDPT at 0x2000, PD at 0x3000 (all physically allocated)</span>
+
+    <span class="cm">; Zero all three tables (3 pages × 4096 bytes)</span>
+    <span class="kw">mov</span>  <span class="reg">edi</span>, <span class="num">0x1000</span>
+    <span class="kw">xor</span>  <span class="reg">eax</span>, <span class="reg">eax</span>
+    <span class="kw">mov</span>  <span class="reg">ecx</span>, (<span class="num">3</span> * <span class="num">4096</span>) / <span class="num">4</span>
+    <span class="kw">rep</span>  <span class="kw">stosd</span>
+
+    <span class="cm">; PML4[0] → PDPT: flags P=1(present) RW=1(writable)</span>
+    <span class="kw">mov</span>  <span class="kw">dword</span> [<span class="num">0x1000</span>], <span class="num">0x2003</span>
+
+    <span class="cm">; PDPT[0] → PD: flags P=1 RW=1</span>
+    <span class="kw">mov</span>  <span class="kw">dword</span> [<span class="num">0x2000</span>], <span class="num">0x3003</span>
+
+    <span class="cm">; PD[0] → 2MB huge page at phys 0x000000: P=1 RW=1 PS=1(2MB page)</span>
+    <span class="kw">mov</span>  <span class="kw">dword</span> [<span class="num">0x3000</span>], <span class="num">0x000083</span>
+    <span class="cm">; PD[1] → 2MB huge page at phys 0x200000: maps the next 2MB</span>
+    <span class="kw">mov</span>  <span class="kw">dword</span> [<span class="num">0x3008</span>], <span class="num">0x200083</span>
+
+    <span class="cm">; Load CR3 with physical address of PML4</span>
+    <span class="kw">mov</span>  <span class="reg">eax</span>, <span class="num">0x1000</span>
+    <span class="kw">mov</span>  <span class="reg">cr3</span>, <span class="reg">eax</span>           <span class="cm">; CR3 = PML4 base — also flushes TLB</span>
+
+    <span class="cm">; ── Step 2: Enable PAE (Physical Address Extension) ───────────────────</span>
+    <span class="cm">; PAE extends physical addresses to 52 bits — required for Long Mode</span>
+    <span class="kw">mov</span>  <span class="reg">eax</span>, <span class="reg">cr4</span>
+    <span class="kw">or</span>   <span class="reg">eax</span>, (<span class="num">1</span> &lt;&lt; <span class="num">5</span>)       <span class="cm">; CR4.PAE = bit 5</span>
+    <span class="kw">mov</span>  <span class="reg">cr4</span>, <span class="reg">eax</span>
+
+    <span class="cm">; ── Step 3: Set LME in EFER MSR ───────────────────────────────────────</span>
+    <span class="cm">; RDMSR/WRMSR: ECX = MSR address, EDX:EAX = value</span>
+    <span class="kw">mov</span>  <span class="reg">ecx</span>, <span class="num">0xC0000080</span>    <span class="cm">; EFER MSR address</span>
+    <span class="kw">rdmsr</span>                   <span class="cm">; read current EFER into EDX:EAX</span>
+    <span class="kw">or</span>   <span class="reg">eax</span>, (<span class="num">1</span> &lt;&lt; <span class="num">8</span>)       <span class="cm">; bit 8 = LME (Long Mode Enable)</span>
+    <span class="kw">or</span>   <span class="reg">eax</span>, (<span class="num">1</span> &lt;&lt; <span class="num">0</span>)       <span class="cm">; bit 0 = SCE (SYSCALL/SYSRET enable)</span>
+    <span class="kw">or</span>   <span class="reg">eax</span>, (<span class="num">1</span> &lt;&lt; <span class="num">11</span>)      <span class="cm">; bit 11 = NXE (No-Execute Enable)</span>
+    <span class="kw">wrmsr</span>                   <span class="cm">; write back — LME set, but NOT yet active</span>
+
+    <span class="cm">; ── Step 4: Enable Paging + keep PE set in CR0 ────────────────────────</span>
+    <span class="cm">; Setting PG while LME=1 atomically activates Long Mode (sets EFER.LMA)</span>
+    <span class="kw">mov</span>  <span class="reg">eax</span>, <span class="reg">cr0</span>
+    <span class="kw">or</span>   <span class="reg">eax</span>, (<span class="num">1</span> &lt;&lt; <span class="num">31</span>) | (<span class="num">1</span> &lt;&lt; <span class="num">0</span>)  <span class="cm">; PG=1 | PE=1</span>
+    <span class="kw">mov</span>  <span class="reg">cr0</span>, <span class="reg">eax</span>
+    <span class="cm">; EFER.LMA is now 1. Long Mode is active.</span>
+    <span class="cm">; But CS still has the 32-bit descriptor — we are in "compatibility mode".</span>
+
+    <span class="cm">; ── Step 5: Far jump to 64-bit code segment ───────────────────────────</span>
+    <span class="cm">; 0x18 = GDT entry 3 (64-bit code descriptor with L=1, D/B=0)</span>
+    <span class="cm">; After this jump, CS is loaded with the 64-bit descriptor.</span>
+    <span class="kw">jmp</span>  <span class="num">0x18</span>:<span class="fn">lm64_entry</span>
+
+<span class="kw">bits</span> <span class="num">64</span>
+<span class="fn">lm64_entry</span>:
+    <span class="cm">; ── Long Mode is fully active ─────────────────────────────────────────</span>
+    <span class="kw">mov</span>  <span class="reg">ax</span>,  <span class="num">0x20</span>           <span class="cm">; 64-bit data segment selector</span>
+    <span class="kw">mov</span>  <span class="reg">ds</span>,  <span class="reg">ax</span>
+    <span class="kw">mov</span>  <span class="reg">es</span>,  <span class="reg">ax</span>
+    <span class="kw">mov</span>  <span class="reg">ss</span>,  <span class="reg">ax</span>
+    <span class="kw">xor</span>  <span class="reg">ax</span>,  <span class="reg">ax</span>
+    <span class="kw">mov</span>  <span class="reg">fs</span>,  <span class="reg">ax</span>            <span class="cm">; FS/GS = 0 (base set via MSR_FS_BASE for TLS)</span>
+    <span class="kw">mov</span>  <span class="reg">gs</span>,  <span class="reg">ax</span>
+
+    <span class="cm">; All 16 GPRs (RAX–R15), 64-bit virtual addresses, RIP-relative addressing.</span>
+    <span class="cm">; Segment base/limit ignored (except FS/GS for TLS via MSR_FS_BASE/GS_BASE).</span>
+    <span class="cm">; Privilege rings active. Paging active. NX active. SYSCALL available.</span>
+    <span class="cm">; → Hand off to the kernel's 64-bit entry point.</span>
+    <span class="kw">call</span> <span class="fn">kernel_main</span></pre>
+        </div>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="registro completo do estado dos controles durante a transição" data-en="full control register state across the transition">full control register state across the transition</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  Register     Real Mode        Protected Mode   Long Mode
+  ────────────────────────────────────────────────────────────────────
+  CR0          0x60000010       0x60000011       0xE0000011
+               PE=0 PG=0        PE=1 PG=0        PE=1 PG=1 WP=1
+
+  CR3          —                —                0x00001000
+                                                 (PML4 physical addr)
+
+  CR4          0x00000000       0x00000000       0x00000020
+                                                 PAE=1
+
+  EFER         0x00000000       0x00000000       0x00000D01
+                                                 SCE=1 LME=1 LMA=1 NXE=1
+
+  CS selector  0xF000           0x0008           0x0018
+               (Real Mode seg)  (32-bit code)    (64-bit code, L=1)
+
+  Addr space   20-bit (1 MB)    32-bit (4 GB)    48-bit (256 TB)
+</pre>
+        </div>
+
+        <div class="callout warn">
+            <p><strong data-pt="O estado entre CR0.PG=1 e o far jump" data-en="The state between CR0.PG=1 and the far jump">O estado entre <code>CR0.PG=1</code> e o far jump</strong></p>
+            <p class="lang-pt">Entre o momento em que <code>CR0.PG</code> é setado e a execução do
+            <code>JMP FAR 0x18:</code>, o CPU está em um estado híbrido chamado
+            <em>Compatibility Mode</em> (um submodo do Long Mode onde código de 32 bits ainda pode
+            executar). O registrador <code>CS</code> ainda carrega o seletor de 32 bits. Cada
+            instrução executada nesse gap é decodificada como código de 32 bits usando o descritor
+            de 32 bits no GDT. O far jump é o momento em que <code>CS</code> é recarregado com o
+            descritor de 64 bits (<code>L=1</code>) e o processador começa a decodificar
+            instruções como código de 64 bits. Qualquer instrução de 64 bits executada antes
+            desse jump provavelmente causará um triple fault.</p>
+            <p class="lang-en" style="display:none">Between the moment <code>CR0.PG</code> is set and
+            the execution of <code>JMP FAR 0x18:</code>, the CPU is in a hybrid state called
+            <em>Compatibility Mode</em> (a sub-mode of Long Mode where 32-bit code can still run).
+            The <code>CS</code> register still holds the 32-bit selector. Every instruction executed
+            in this gap is decoded as 32-bit code using the 32-bit descriptor in the GDT. The far
+            jump is the moment <code>CS</code> is reloaded with the 64-bit descriptor (<code>L=1</code>)
+            and the processor begins decoding instructions as 64-bit code. Any 64-bit instruction
+            executed before this jump will likely cause a triple fault.</p>
+        </div>
+    </section>
+
+    <div class="post-nav">
+        <a href="../posts.html">
+            <i class='bx bx-arrow-back'></i>
+            <span data-pt="Voltar aos posts" data-en="Back to posts">Voltar aos posts</span>
+        </a>
+        <a href="paging-x86.html">
+            <span data-pt="Ver: Virtual Memory & Paging →" data-en="See: Virtual Memory & Paging →">Ver: Virtual Memory & Paging →</span>
+        </a>
+    </div>
+
+</article>
+</main>
+
+<footer>
+    <p>&copy; 2026 Robert Souza Lages.</p>
+</footer>
+
+<script>
+    let currentLang = localStorage.getItem('lang') || 'pt';
+
+    function setLang(lang) {
+        currentLang = lang;
+        localStorage.setItem('lang', lang);
+        document.querySelectorAll('[data-pt], [data-en]').forEach(el => {
+            const val = el.getAttribute('data-' + lang);
+            if (val !== null) el.textContent = val;
+        });
+        document.querySelectorAll('.lang-pt').forEach(el => el.style.display = lang === 'pt' ? '' : 'none');
+        document.querySelectorAll('.lang-en').forEach(el => el.style.display = lang === 'en' ? '' : 'none');
+        document.documentElement.lang = lang === 'pt' ? 'pt-BR' : 'en';
+        document.querySelectorAll('.lang-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.id === 'btn-' + lang);
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        document.body.addEventListener('click', (e) => {
+            const btn = e.target.closest('.lang-btn');
+            if (btn && btn.id) setLang(btn.id.replace('btn-', ''));
+        });
+        const hamburger = document.querySelector('.hamburger');
+        const navLinks  = document.querySelector('.nav-links');
+        if (hamburger) hamburger.addEventListener('click', () => navLinks.classList.toggle('active'));
+        setLang(currentLang);
+    });
+</script>
+
+</body>
+</html>

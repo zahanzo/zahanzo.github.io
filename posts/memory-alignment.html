@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hardware Reality: Memory Alignment and Struct Padding in C/C++ | Robert Souza Lages</title>
+    <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+    <link rel="stylesheet" href="style.css">
+    <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
+</head>
+<body>
+
+<nav class="navbar">
+    <div class="logo"><span>0x</span>Robert<span>_</span></div>
+    <ul class="nav-links">
+        <li><a href="../index.html"    data-pt="Sobre"    data-en="About">Sobre</a></li>
+        <li><a href="../resume.html"   data-pt="Currículo" data-en="Resume">Currículo</a></li>
+        <li><a href="../projects.html" data-pt="Projetos"  data-en="Projects">Projetos</a></li>
+        <li><a href="../posts.html" class="active">Posts</a></li>
+    </ul>
+    <div class="navbar-right">
+        <div class="lang-toggle">
+            <button class="lang-btn active" id="btn-pt">PT</button>
+            <button class="lang-btn"        id="btn-en">EN</button>
+        </div>
+        <div class="hamburger"><i class='bx bx-menu'></i></div>
+    </div>
+</nav>
+
+<main>
+<article class="post-wrapper">
+
+    <header class="post-header">
+        <div class="post-breadcrumb">
+            <a href="../posts.html">posts</a><span>/</span><span>memory-alignment</span>
+        </div>
+        <div class="post-meta">
+            <span class="post-tag">C/C++</span>
+            <span class="post-tag">PERFORMANCE</span>
+            <span class="post-tag">LOW-LEVEL</span>
+            <time class="post-date" datetime="2026-05-26">2026-05-26</time>
+        </div>
+        <h1 class="post-title">
+            <span data-pt="Hardware Reality:" data-en="Hardware Reality:">Hardware Reality:</span><br>
+            <span data-pt="Memory Alignment & Struct Padding em C/C++" data-en="Memory Alignment & Struct Padding in C/C++">Memory Alignment & Struct Padding em C/C++</span>
+        </h1>
+        <p class="post-summary lang-pt">
+            Um <code>struct</code> com um <code>char</code> e um <code>int</code> deveria ocupar 5 bytes.
+            O compilador diz 8. Isso não é um bug — é o compilador respeitando restrições físicas do
+            hardware que a maioria dos programadores nunca precisou entender. Este post explica por que
+            o alinhamento existe, como o compilador insere padding automaticamente, como otimizar layouts
+            de struct e quando <code>__attribute__((packed))</code> é uma armadilha de Undefined Behavior.
+        </p>
+        <p class="post-summary lang-en" style="display:none">
+            A <code>struct</code> with a <code>char</code> and an <code>int</code> should take 5 bytes.
+            The compiler says 8. This is not a bug — it is the compiler respecting physical hardware
+            constraints that most programmers never had to understand. This post explains why alignment
+            exists, how the compiler automatically inserts padding, how to optimize struct layouts, and
+            when <code>__attribute__((packed))</code> is an Undefined Behavior trap.
+        </p>
+
+        <div class="toc lang-pt">
+            <div class="toc-title">// ÍNDICE</div>
+            <ol>
+                <li><a href="#paradoxo">O Paradoxo dos 8 bytes: 1 + 4 ≠ 5</a></li>
+                <li><a href="#hardware">A Realidade do Hardware: cache lines e word boundaries</a></li>
+                <li><a href="#padding">As Regras de Padding: alinhamento natural e ABI</a></li>
+                <li><a href="#otimizacao">Packing e Otimização: ordenar, empacotar, alinhar</a></li>
+                <li><a href="#exemplos">Exemplos Completos: sizeof, offsetof e diagramas de memória</a></li>
+            </ol>
+        </div>
+        <div class="toc lang-en" style="display:none">
+            <div class="toc-title">// TABLE OF CONTENTS</div>
+            <ol>
+                <li><a href="#paradoxo">The 8-byte Paradox: 1 + 4 ≠ 5</a></li>
+                <li><a href="#hardware">The Hardware Reality: cache lines and word boundaries</a></li>
+                <li><a href="#padding">Padding Rules: natural alignment and the ABI</a></li>
+                <li><a href="#otimizacao">Packing and Optimization: order, pack, align</a></li>
+                <li><a href="#exemplos">Full Examples: sizeof, offsetof and memory diagrams</a></li>
+            </ol>
+        </div>
+    </header>
+
+    <!-- 01 — O PARADOXO -->
+    <section class="post-section" id="paradoxo">
+        <div class="section-label">01</div>
+        <h2 data-pt="O Paradoxo dos 8 bytes: 1 + 4 ≠ 5"
+            data-en="The 8-byte Paradox: 1 + 4 ≠ 5">
+            <span data-pt="O Paradoxo dos 8 bytes" data-en="The 8-byte Paradox">O Paradoxo dos 8 bytes</span>
+        </h2>
+
+        <p class="lang-pt">
+            Todo programador C aprende que <code>sizeof(char) == 1</code> e
+            <code>sizeof(int) == 4</code>. É razoável, então, esperar que o struct abaixo
+            ocupe 5 bytes:
+        </p>
+        <p class="lang-en" style="display:none">
+            Every C programmer learns that <code>sizeof(char) == 1</code> and
+            <code>sizeof(int) == 4</code>. It is reasonable, then, to expect the struct below
+            to occupy 5 bytes:
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">the paradox</span>
+                <span class="code-lang">c</span>
+            </div>
+<pre><span class="kw">struct</span> <span class="tp">Paradox</span> {
+    <span class="tp">char</span>  a;  <span class="cm">/* 1 byte  — you expect offset 0 */</span>
+    <span class="tp">int</span>   b;  <span class="cm">/* 4 bytes — you expect offset 1 */</span>
+};
+
+<span class="cm">/* Expectation: sizeof(Paradox) == 1 + 4 == 5 */</span>
+<span class="cm">/* Reality:     sizeof(Paradox) == 8           */</span>
+
+<span class="fn">printf</span>(<span class="str">"sizeof(Paradox) = %zu\n"</span>, <span class="kw">sizeof</span>(<span class="kw">struct</span> <span class="tp">Paradox</span>)); <span class="cm">// 8</span>
+<span class="fn">printf</span>(<span class="str">"offsetof(a)     = %zu\n"</span>, <span class="fn">offsetof</span>(<span class="kw">struct</span> <span class="tp">Paradox</span>, a)); <span class="cm">// 0</span>
+<span class="fn">printf</span>(<span class="str">"offsetof(b)     = %zu\n"</span>, <span class="fn">offsetof</span>(<span class="kw">struct</span> <span class="tp">Paradox</span>, b)); <span class="cm">// 4, not 1</span></pre>
+        </div>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="o que realmente existe na memória" data-en="what actually lives in memory">what actually lives in memory</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  struct Paradox in memory (8 bytes):
+
+  Offset:   0     1     2     3     4     5     6     7
+           ┌─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┐
+           │  a  │  ▒  │  ▒  │  ▒  │     b     b     b     b│
+           └─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┘
+                  ╰─────────────╯
+                  3 bytes padding
+                  inserted by compiler
+
+  ▒ = padding byte (indeterminate value, NOT zero)
+  b = bytes of the int member, starting at a 4-byte-aligned boundary
+</pre>
+        </div>
+
+        <p class="lang-pt">
+            O compilador inseriu 3 bytes de <em>padding</em> entre <code>a</code> e <code>b</code>.
+            Isso não é desperdício acidental — é o compilador obedecendo a uma restrição física
+            do hardware: um <code>int</code> de 4 bytes <strong style="color:#fff">deve começar em
+            um endereço divisível por 4</strong>. O porquê disso está na forma como as CPUs
+            leem memória.
+        </p>
+        <p class="lang-en" style="display:none">
+            The compiler inserted 3 bytes of <em>padding</em> between <code>a</code> and <code>b</code>.
+            This is not accidental waste — it is the compiler obeying a physical hardware constraint:
+            a 4-byte <code>int</code> <strong style="color:#fff">must start at an address divisible by 4</strong>.
+            The reason lies in how CPUs actually read memory.
+        </p>
+    </section>
+
+    <!-- 02 — HARDWARE -->
+    <section class="post-section" id="hardware">
+        <div class="section-label">02</div>
+        <h2 data-pt="A Realidade do Hardware: cache lines e word boundaries"
+            data-en="The Hardware Reality: cache lines and word boundaries">
+            <span data-pt="A Realidade do Hardware" data-en="The Hardware Reality">A Realidade do Hardware</span>
+        </h2>
+
+        <p class="lang-pt">
+            CPUs não leem memória byte a byte. O hardware opera em unidades maiores chamadas
+            <strong style="color:#fff">cache lines</strong> — no x86 moderno, sempre 64 bytes.
+            Quando você acessa qualquer byte de memória, o processador carrega os 64 bytes inteiros
+            da cache line que contém aquele byte. Isso significa que a posição de um dado dentro
+            de uma cache line afeta diretamente a performance.
+        </p>
+        <p class="lang-en" style="display:none">
+            CPUs do not read memory byte by byte. The hardware operates in larger units called
+            <strong style="color:#fff">cache lines</strong> — on modern x86, always 64 bytes.
+            When you access any byte of memory, the processor loads the entire 64-byte cache line
+            containing that byte. This means a piece of data's position within a cache line
+            directly affects performance.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="o custo de um acesso não-alinhado" data-en="the cost of an unaligned access">the cost of an unaligned access</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  Cache line (64 bytes), address 0x40:
+
+  0x40                                                    0x7F
+  ┌────────────────────────────────────────────────────────┐
+  │                    cache line                          │
+  └────────────────────────────────────────────────────────┘
+
+  Aligned int at 0x44:        [  int  ] — fits in one cache line, one read
+  0x40                  0x44  0x48
+  ┌──────────────────┬──────┬────────────────────────────┐
+  │  ...             │  int │  ...                       │
+  └──────────────────┴──────┴────────────────────────────┘
+
+  Unaligned int straddling two cache lines at 0x3E:
+  0x00                  0x3E  0x40                  0x7F
+  ┌──────────────────┬──┼──┬──────────────────────────────┐
+  │  cache line A    │in│t │  cache line B               │
+  └──────────────────┴──┴──┴──────────────────────────────┘
+                        ╰───╯
+                        2 bytes in A, 2 bytes in B
+                        → TWO cache line loads required
+                        → potential cache miss penalty × 2
+</pre>
+        </div>
+
+        <h3>// <span data-pt="x86 vs ARM: falha silenciosa ou explosão ruidosa?" data-en="x86 vs ARM: silent slowdown or noisy crash?">x86 vs ARM: <span data-pt="falha silenciosa ou explosão ruidosa?" data-en="silent slowdown or noisy crash?">falha silenciosa ou explosão ruidosa?</span></span></h3>
+
+        <p class="lang-pt">
+            O comportamento de acessos não-alinhados difere radicalmente por arquitetura.
+            No x86, o hardware <em>tolera</em> acessos não-alinhados — o microcode faz dois
+            acessos ao barramento internamente, mas o programa não crasha. No ARM, muitas
+            configurações geram um <strong style="color:#fff">Data Abort</strong> imediato:
+            o sistema operacional converte isso em <code>SIGBUS</code> e o processo morre.
+        </p>
+        <p class="lang-en" style="display:none">
+            The behavior of unaligned accesses differs radically by architecture. On x86, hardware
+            <em>tolerates</em> unaligned accesses — microcode performs two bus accesses internally,
+            but the program does not crash. On ARM, many configurations generate an immediate
+            <strong style="color:#fff">Data Abort</strong>: the OS converts this to
+            <code>SIGBUS</code> and the process dies.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="comportamento por arquitetura — resumo" data-en="behavior by architecture — summary">behavior by architecture — summary</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  Architecture   Unaligned access behavior
+  ─────────────  ──────────────────────────────────────────────────────────
+  x86 / x86_64   Hardware handles it transparently.
+                 Cost: 1 extra memory cycle if straddling a cache line.
+                 Cost: ~10–20% throughput penalty in hot loops.
+                 Atomic operations (LOCK prefix) REQUIRE alignment — violation
+                 → #GP (General Protection Fault, i.e. SIGBUS/SIGSEGV).
+
+  ARM Cortex-A   Default: fault (SIGBUS) on unaligned 16/32/64-bit access.
+                 SCTLR.A bit (Alignment Check) controls this.
+                 Many Linux kernels enable software fixup: trap → emulate →
+                 slower than aligned, but program survives.
+
+  ARM Cortex-M   ALWAYS faults on unaligned multi-byte access (HardFault).
+                 No software fixup. Your firmware crashes, period.
+
+  RISC-V         Spec allows implementations to fault on unaligned access.
+                 Embedded implementations (RV32I without M ext): always fault.
+
+  MIPS           Historically strict: always faults on unaligned access.
+</pre>
+        </div>
+
+        <div class="callout warn">
+            <p><strong data-pt="UB na linguagem, não só no hardware" data-en="UB at the language level, not just hardware">UB <span data-pt="na linguagem, não só no hardware" data-en="at the language level, not just hardware">na linguagem, não só no hardware</span></strong></p>
+            <p class="lang-pt">O padrão C/C++ garante que variáveis e membros de struct são
+            corretamente alinhados <em>quando alocados normalmente</em>. Se você força um
+            acesso não-alinhado — por exemplo, fazendo cast de um <code>char*</code> para
+            <code>int*</code> em um endereço ímpar — isso é <strong style="color:#fff">Undefined
+            Behavior</strong> pela linguagem, independente do hardware tolerar ou não.
+            O compilador pode assumir que ponteiros são alinhados e gerar código que quebra
+            silenciosamente em otimizações agressivas (<code>-O2</code> / <code>-O3</code>).</p>
+            <p class="lang-en" style="display:none">The C/C++ standard guarantees that variables and
+            struct members are properly aligned <em>when allocated normally</em>. If you force an
+            unaligned access — for example, casting a <code>char*</code> to <code>int*</code> at an
+            odd address — that is <strong style="color:#fff">Undefined Behavior</strong> at the
+            language level, regardless of whether the hardware tolerates it. The compiler may assume
+            pointers are aligned and generate code that silently breaks under aggressive optimization
+            (<code>-O2</code> / <code>-O3</code>).</p>
+        </div>
+    </section>
+
+    <!-- 03 — PADDING RULES -->
+    <section class="post-section" id="padding">
+        <div class="section-label">03</div>
+        <h2 data-pt="As Regras de Padding: alinhamento natural e ABI"
+            data-en="Padding Rules: natural alignment and the ABI">
+            <span data-pt="As Regras de Padding" data-en="Padding Rules">As Regras de Padding</span>
+        </h2>
+
+        <p class="lang-pt">
+            O compilador insere padding seguindo regras definidas pela <strong style="color:#fff">ABI
+            da plataforma alvo</strong>. Para o System V AMD64 ABI (Linux/macOS x86_64) e para a
+            maioria das ABIs modernas, as regras são:
+        </p>
+        <p class="lang-en" style="display:none">
+            The compiler inserts padding following rules defined by the <strong style="color:#fff">target
+            platform's ABI</strong>. For the System V AMD64 ABI (Linux/macOS x86_64) and most modern
+            ABIs, the rules are:
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="alinhamento natural por tipo — System V AMD64 ABI" data-en="natural alignment by type — System V AMD64 ABI">natural alignment by type — System V AMD64 ABI</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  Type                  Size    Alignment   Notes
+  ────────────────────  ──────  ──────────  ─────────────────────────────────────
+  char / uint8_t         1       1           no alignment requirement
+  short / uint16_t       2       2           must be at even address
+  int / uint32_t / float 4       4           must be at addr % 4 == 0
+  long / uint64_t        8       8           must be at addr % 8 == 0
+  double                 8       8           must be at addr % 8 == 0
+  long double            16      16          (x87 80-bit padded to 16 on x86_64)
+  pointer (64-bit)       8       8           must be at addr % 8 == 0
+  struct                 varies  max(members) struct itself aligned to largest member
+
+  Rule 1: each member is placed at the next address satisfying its alignment.
+  Rule 2: padding is inserted BETWEEN members to satisfy the next member's alignment.
+  Rule 3: trailing padding is added so sizeof(struct) is a multiple of the struct's alignment.
+</pre>
+        </div>
+
+        <h3>// <span data-pt="Por que o trailing padding existe?" data-en="Why does trailing padding exist?">Por que o trailing padding existe?</span></h3>
+
+        <p class="lang-pt">
+            O trailing padding garante que um array de structs seja válido. Se você declara
+            <code>struct S arr[2]</code>, <code>arr[1]</code> precisa estar alinhado assim como
+            <code>arr[0]</code>. Isso só é possível se <code>sizeof(S)</code> for múltiplo do
+            alinhamento do struct. Sem o trailing padding, o segundo elemento do array estaria
+            no endereço errado.
+        </p>
+        <p class="lang-en" style="display:none">
+            Trailing padding ensures that an array of structs is valid. If you declare
+            <code>struct S arr[2]</code>, <code>arr[1]</code> must be aligned just like
+            <code>arr[0]</code>. This is only possible if <code>sizeof(S)</code> is a multiple of
+            the struct's alignment. Without trailing padding, the second array element would be at
+            the wrong address.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="trailing padding para garantir alinhamento em arrays" data-en="trailing padding to guarantee array alignment">trailing padding to guarantee array alignment</span>
+                <span class="code-lang">c</span>
+            </div>
+<pre><span class="kw">struct</span> <span class="tp">Tricky</span> {
+    <span class="tp">int</span>   a;   <span class="cm">/* 4 bytes @ offset 0 */</span>
+    <span class="tp">char</span>  b;   <span class="cm">/* 1 byte  @ offset 4 */</span>
+               <span class="cm">/* 3 bytes trailing padding @ offset 5, 6, 7 */</span>
+};
+<span class="cm">/* sizeof(Tricky) == 8 (not 5!) */</span>
+<span class="cm">/* Alignment of Tricky == 4 (largest member = int) */</span>
+<span class="cm">/* 8 is the smallest multiple of 4 that fits int(4) + char(1) */</span>
+
+<span class="kw">struct</span> <span class="tp">Tricky</span> arr[<span class="num">2</span>];
+<span class="cm">/* arr[0] at addr 0x00: int @ 0x00 ✓ (4-aligned), char @ 0x04 ✓ */</span>
+<span class="cm">/* arr[1] at addr 0x08: int @ 0x08 ✓ (4-aligned), char @ 0x0C ✓ */</span>
+<span class="cm">/* Without trailing padding, arr[1] would be at 0x05 → int @ 0x05 ✗ */</span></pre>
+        </div>
+    </section>
+
+    <!-- 04 — OTIMIZAÇÃO -->
+    <section class="post-section" id="otimizacao">
+        <div class="section-label">04</div>
+        <h2 data-pt="Packing e Otimização: ordenar, empacotar, alinhar"
+            data-en="Packing and Optimization: order, pack, align">
+            <span data-pt="Packing e Otimização" data-en="Packing and Optimization">Packing e Otimização</span>
+        </h2>
+
+        <h3>// <span data-pt="Estratégia 1: ordenar membros do maior para o menor" data-en="Strategy 1: order members from largest to smallest">Estratégia 1: <span data-pt="ordenar membros do maior para o menor" data-en="order members from largest to smallest">ordenar membros do maior para o menor</span></span></h3>
+
+        <p class="lang-pt">
+            A maneira mais simples e sem custo de eliminar padding é ordenar os membros do
+            struct por alinhamento decrescente. Membros maiores primeiro eliminam a necessidade
+            de padding interno, pois nenhum membro menor pode exigir alinhamento maior do que
+            um membro que já o precede.
+        </p>
+        <p class="lang-en" style="display:none">
+            The simplest and zero-cost way to eliminate padding is to order struct members by
+            decreasing alignment. Larger members first eliminate the need for internal padding,
+            since no smaller member can require greater alignment than a member that already
+            precedes it.
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="antes e depois da reordenação" data-en="before and after reordering">before and after reordering</span>
+                <span class="code-lang">c</span>
+            </div>
+<pre><span class="cm">/* BEFORE: random order — 32 bytes due to padding */</span>
+<span class="kw">struct</span> <span class="tp">Unoptimized</span> {
+    <span class="tp">char</span>    a;       <span class="cm">/*  1 byte  @ offset  0 */</span>
+                     <span class="cm">/*  3 bytes padding    */</span>
+    <span class="tp">int</span>     b;       <span class="cm">/*  4 bytes @ offset  4 */</span>
+    <span class="tp">char</span>    c;       <span class="cm">/*  1 byte  @ offset  8 */</span>
+                     <span class="cm">/*  7 bytes padding    */</span>
+    <span class="tp">double</span>  d;       <span class="cm">/*  8 bytes @ offset 16 */</span>
+    <span class="tp">short</span>   e;       <span class="cm">/*  2 bytes @ offset 24 */</span>
+                     <span class="cm">/*  6 bytes padding    */</span>
+};                   <span class="cm">/* sizeof == 32          */</span>
+
+<span class="cm">/* AFTER: sorted largest-to-smallest — 16 bytes, zero internal padding */</span>
+<span class="kw">struct</span> <span class="tp">Optimized</span> {
+    <span class="tp">double</span>  d;       <span class="cm">/*  8 bytes @ offset  0 */</span>
+    <span class="tp">int</span>     b;       <span class="cm">/*  4 bytes @ offset  8 */</span>
+    <span class="tp">short</span>   e;       <span class="cm">/*  2 bytes @ offset 12 */</span>
+    <span class="tp">char</span>    a;       <span class="cm">/*  1 byte  @ offset 14 */</span>
+    <span class="tp">char</span>    c;       <span class="cm">/*  1 byte  @ offset 15 */</span>
+};                   <span class="cm">/* sizeof == 16, 50% smaller */</span></pre>
+        </div>
+
+        <h3>// <span data-pt="Estratégia 2: __attribute__((packed)) — com cuidado extremo" data-en="Strategy 2: __attribute__((packed)) — with extreme care">Estratégia 2: <code>__attribute__((packed))</code></span></h3>
+
+        <p class="lang-pt">
+            A diretiva <code>__attribute__((packed))</code> (GCC/Clang) ou <code>#pragma pack(1)</code>
+            (MSVC e outros) instrui o compilador a <strong style="color:#fff">eliminar todo o padding</strong>,
+            colocando os membros em bytes consecutivos. O resultado é o menor struct possível —
+            mas com custo severo e riscos de UB. Use apenas quando o layout exato dos bytes é
+            mandatório (protocolos de rede, formatos de arquivo binário, comunicação com hardware).
+        </p>
+        <p class="lang-en" style="display:none">
+            The <code>__attribute__((packed))</code> directive (GCC/Clang) or <code>#pragma pack(1)</code>
+            (MSVC and others) instructs the compiler to <strong style="color:#fff">eliminate all padding</strong>,
+            placing members at consecutive bytes. The result is the smallest possible struct —
+            but with severe costs and UB risks. Use only when the exact byte layout is mandatory
+            (network protocols, binary file formats, hardware register maps).
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">packed struct — size wins, safety loses</span>
+                <span class="code-lang">c</span>
+            </div>
+<pre><span class="kw">struct</span> __attribute__((<span class="fn">packed</span>)) <span class="tp">NetworkHeader</span> {
+    <span class="tp">uint8_t</span>   flags;    <span class="cm">/* offset 0 — aligned ✓ */</span>
+    <span class="tp">uint32_t</span>  src_ip;   <span class="cm">/* offset 1 — UNALIGNED on 4-byte boundary ✗ */</span>
+    <span class="tp">uint32_t</span>  dst_ip;   <span class="cm">/* offset 5 — UNALIGNED ✗ */</span>
+    <span class="tp">uint16_t</span>  port;     <span class="cm">/* offset 9 — UNALIGNED on 2-byte boundary ✗ */</span>
+};
+<span class="cm">/* sizeof == 11 (correct for wire format) */</span>
+
+<span class="cm">/* SAFE: read via memcpy — compiler handles unaligned load correctly */</span>
+<span class="tp">uint32_t</span> ip;
+<span class="fn">memcpy</span>(&ip, &hdr.src_ip, <span class="kw">sizeof</span>(ip));
+
+<span class="cm">/* DANGEROUS: direct pointer dereference — UB, crashes on ARM Cortex-M */</span>
+<span class="tp">uint32_t</span> ip_unsafe = hdr.src_ip;  <span class="cm">/* compiler may load as 4-byte word → SIGBUS */</span>
+
+<span class="cm">/* ALSO DANGEROUS: taking the address of a packed member */</span>
+<span class="tp">uint32_t</span> *ptr = &hdr.src_ip;  <span class="cm">/* GCC warns: address of packed member */</span>
+*ptr = <span class="fn">htonl</span>(<span class="num">0xC0A80001</span>);     <span class="cm">/* UB: unaligned write via aligned pointer */</span></pre>
+        </div>
+
+        <h3>// <span data-pt="Estratégia 3: alignas() para SIMD e false sharing" data-en="Strategy 3: alignas() for SIMD and false sharing">Estratégia 3: <code>alignas()</code></span></h3>
+
+        <p class="lang-pt">
+            <code>alignas(N)</code> (C11/C++11) força um alinhamento <em>maior</em> que o natural —
+            útil para garantir alinhamento de cache line (<code>alignas(64)</code>) e evitar
+            <em>false sharing</em>, ou para garantir alinhamento de 16/32 bytes exigido por
+            instruções SIMD (SSE/AVX).
+        </p>
+        <p class="lang-en" style="display:none">
+            <code>alignas(N)</code> (C11/C++11) forces <em>greater</em> alignment than natural —
+            useful for guaranteeing cache line alignment (<code>alignas(64)</code>) and avoiding
+            <em>false sharing</em>, or for ensuring the 16/32-byte alignment required by SIMD
+            instructions (SSE/AVX).
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">alignas — SIMD and false sharing prevention</span>
+                <span class="code-lang">cpp</span>
+            </div>
+<pre><span class="pp">#include</span> <span class="str">&lt;stdalign.h&gt;</span>   <span class="cm">/* C11 */</span>
+<span class="pp">#include</span> <span class="str">&lt;immintrin.h&gt;</span>  <span class="cm">/* SSE/AVX intrinsics */</span>
+
+<span class="cm">/* Force 16-byte alignment for SSE2 _mm_load_ps (requires 16-byte alignment) */</span>
+<span class="kw">struct</span> alignas(<span class="num">16</span>) <span class="tp">Vec4</span> {
+    <span class="tp">float</span> x, y, z, w;   <span class="cm">/* 16 bytes, 16-byte aligned → _mm_load_ps safe */</span>
+};
+
+<span class="cm">/* Force 32-byte alignment for AVX _mm256_load_ps */</span>
+<span class="kw">struct</span> alignas(<span class="num">32</span>) <span class="tp">Vec8</span> {
+    <span class="tp">float</span> v[<span class="num">8</span>];          <span class="cm">/* 32 bytes, 32-byte aligned → _mm256_load_ps safe */</span>
+};
+
+<span class="cm">/* Prevent false sharing in multi-threaded code:                          */</span>
+<span class="cm">/* Two threads writing adjacent fields → both dirty the SAME cache line → */</span>
+<span class="cm">/* hardware must synchronize the line on every write (cache coherency IPI) */</span>
+<span class="kw">struct</span> <span class="tp">ThreadCounter</span> {
+    alignas(<span class="num">64</span>) <span class="tp">uint64_t</span> count;  <span class="cm">/* occupies its own 64-byte cache line */</span>
+    alignas(<span class="num">64</span>) <span class="tp">uint64_t</span> errors; <span class="cm">/* different cache line → no false sharing */</span>
+};
+<span class="cm">/* sizeof(ThreadCounter) == 128 (two cache lines) */</span>
+<span class="cm">/* Without alignas(64): sizeof == 16, both fields share ONE cache line  */</span></pre>
+        </div>
+    </section>
+
+    <!-- 05 — EXEMPLOS COMPLETOS -->
+    <section class="post-section" id="exemplos">
+        <div class="section-label">05</div>
+        <h2 data-pt="Exemplos Completos: sizeof, offsetof e diagramas de memória"
+            data-en="Full Examples: sizeof, offsetof and memory diagrams">
+            <span data-pt="Exemplos Completos" data-en="Full Examples">Exemplos Completos</span>
+        </h2>
+
+        <p class="lang-pt">
+            O exemplo abaixo reúne os cenários mais comuns. Compilado com GCC 13 no Linux
+            x86_64 (<code>-O0</code>, System V AMD64 ABI).
+        </p>
+        <p class="lang-en" style="display:none">
+            The example below covers the most common scenarios. Compiled with GCC 13 on Linux
+            x86_64 (<code>-O0</code>, System V AMD64 ABI).
+        </p>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename">alignment_demo.c — all cases in one file</span>
+                <span class="code-lang">c</span>
+            </div>
+<pre><span class="pp">#include</span> <span class="str">&lt;stdio.h&gt;</span>
+<span class="pp">#include</span> <span class="str">&lt;stddef.h&gt;</span>    <span class="cm">/* offsetof */</span>
+<span class="pp">#include</span> <span class="str">&lt;stdint.h&gt;</span>
+
+<span class="cm">/* ─────────────────────────────────────────────────────────────────── */</span>
+<span class="cm">/* CASE 1: naive order — heavy padding                                 */</span>
+<span class="kw">struct</span> <span class="tp">Naive</span> {
+    <span class="tp">char</span>   a;     <span class="cm">/* 1 byte  */</span>
+    <span class="tp">double</span> b;     <span class="cm">/* 8 bytes */</span>
+    <span class="tp">int</span>    c;     <span class="cm">/* 4 bytes */</span>
+    <span class="tp">char</span>   d;     <span class="cm">/* 1 byte  */</span>
+    <span class="tp">short</span>  e;     <span class="cm">/* 2 bytes */</span>
+};
+<span class="cm">/* sizeof == 32 (14 bytes of data, 18 bytes of padding!) */</span>
+
+<span class="cm">/* ─────────────────────────────────────────────────────────────────── */</span>
+<span class="cm">/* CASE 2: optimal order — no internal padding                         */</span>
+<span class="kw">struct</span> <span class="tp">Optimal</span> {
+    <span class="tp">double</span> b;     <span class="cm">/* 8 bytes */</span>
+    <span class="tp">int</span>    c;     <span class="cm">/* 4 bytes */</span>
+    <span class="tp">short</span>  e;     <span class="cm">/* 2 bytes */</span>
+    <span class="tp">char</span>   a;     <span class="cm">/* 1 byte  */</span>
+    <span class="tp">char</span>   d;     <span class="cm">/* 1 byte  */</span>
+};
+<span class="cm">/* sizeof == 16 (14 bytes of data, 2 bytes trailing padding) */</span>
+
+<span class="cm">/* ─────────────────────────────────────────────────────────────────── */</span>
+<span class="cm">/* CASE 3: packed — minimum size, maximum danger                       */</span>
+<span class="kw">struct</span> __attribute__((<span class="fn">packed</span>)) <span class="tp">Packed</span> {
+    <span class="tp">char</span>   a;     <span class="cm">/* 1 byte  */</span>
+    <span class="tp">double</span> b;     <span class="cm">/* 8 bytes, UNALIGNED at offset 1 */</span>
+    <span class="tp">int</span>    c;     <span class="cm">/* 4 bytes, UNALIGNED at offset 9 */</span>
+    <span class="tp">char</span>   d;     <span class="cm">/* 1 byte  */</span>
+    <span class="tp">short</span>  e;     <span class="cm">/* 2 bytes, UNALIGNED at offset 14 */</span>
+};
+<span class="cm">/* sizeof == 16 (14 bytes of data, 0 padding, all unaligned except a/d) */</span>
+
+<span class="tp">int</span> <span class="fn">main</span>(<span class="tp">void</span>) {
+    <span class="fn">printf</span>(<span class="str">"=== struct Naive ===\n"</span>);
+    <span class="fn">printf</span>(<span class="str">"  sizeof   = %zu\n"</span>, <span class="kw">sizeof</span>(<span class="kw">struct</span> <span class="tp">Naive</span>));
+    <span class="fn">printf</span>(<span class="str">"  offsetof(a) = %zu\n"</span>, <span class="fn">offsetof</span>(<span class="kw">struct</span> <span class="tp">Naive</span>, a));
+    <span class="fn">printf</span>(<span class="str">"  offsetof(b) = %zu\n"</span>, <span class="fn">offsetof</span>(<span class="kw">struct</span> <span class="tp">Naive</span>, b));
+    <span class="fn">printf</span>(<span class="str">"  offsetof(c) = %zu\n"</span>, <span class="fn">offsetof</span>(<span class="kw">struct</span> <span class="tp">Naive</span>, c));
+    <span class="fn">printf</span>(<span class="str">"  offsetof(d) = %zu\n"</span>, <span class="fn">offsetof</span>(<span class="kw">struct</span> <span class="tp">Naive</span>, d));
+    <span class="fn">printf</span>(<span class="str">"  offsetof(e) = %zu\n"</span>, <span class="fn">offsetof</span>(<span class="kw">struct</span> <span class="tp">Naive</span>, e));
+
+    <span class="fn">printf</span>(<span class="str">"\n=== struct Optimal ===\n"</span>);
+    <span class="fn">printf</span>(<span class="str">"  sizeof   = %zu\n"</span>, <span class="kw">sizeof</span>(<span class="kw">struct</span> <span class="tp">Optimal</span>));
+    <span class="kw">return</span> <span class="num">0</span>;
+}</pre>
+        </div>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="saída do programa" data-en="program output">program output</span>
+                <span class="code-lang">shell</span>
+            </div>
+<pre>$ gcc -O0 alignment_demo.c && ./a.out
+=== struct Naive ===
+  sizeof   = 32
+  offsetof(a) = 0
+  offsetof(b) = 8     <span class="cm"># 7 bytes padding after a (char needs 1, double needs 8)</span>
+  offsetof(c) = 16    <span class="cm"># 0 bytes padding (double ends at 16, int needs 4-align)</span>
+  offsetof(d) = 20    <span class="cm"># 0 bytes padding (int ends at 20, char needs 1-align)</span>
+  offsetof(e) = 22    <span class="cm"># 1 byte padding after d (char ends at 21, short needs 2-align)</span>
+                      <span class="cm"># + 8 bytes trailing padding to reach 32 (next multiple of 8)</span>
+
+=== struct Optimal ===
+  sizeof   = 16       <span class="cm"># 50% smaller than Naive, same data</span></pre>
+        </div>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="diagramas de memória byte a byte" data-en="byte-by-byte memory diagrams">byte-by-byte memory diagrams</span>
+                <span class="code-lang">ascii</span>
+            </div>
+<pre>
+  struct Naive { char a; double b; int c; char d; short e; }
+  32 bytes total — 14 data, 18 padding
+
+  Offset:  0   1   2   3   4   5   6   7   8   9  10  11  12  13  14  15
+          ┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┐
+          │ a │ ▒ │ ▒ │ ▒ │ ▒ │ ▒ │ ▒ │ ▒ │   b   b   b   b   b   b   b   b│
+          └───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┘
+               ╰─────────────────────╯
+               7 bytes padding (a=1, b needs 8-align → next addr%8==0 is 8)
+
+  Offset: 16  17  18  19  20  21  22  23  24  25  26  27  28  29  30  31
+          ┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┐
+          │   c   c   c   c│ d │ ▒ │ e   e │ ▒ │ ▒ │ ▒ │ ▒ │ ▒ │ ▒ │ ▒ │ ▒ │
+          └───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┘
+                               ╰─╯ ╰─╯     ╰───────────────────────────╯
+                               1P  1P       6 bytes trailing padding
+                               (d=1→e at 22  (struct alignment=8, next
+                               needs 2-align) multiple of 8 after 24 is 32)
+
+  ─────────────────────────────────────────────────────────────────────────
+
+  struct Optimal { double b; int c; short e; char a; char d; }
+  16 bytes total — 14 data, 2 padding (trailing only)
+
+  Offset:  0   1   2   3   4   5   6   7   8   9  10  11  12  13  14  15
+          ┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┐
+          │   b   b   b   b   b   b   b   b│   c   c   c   c│ e   e │ a │ d │
+          └───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┘
+          ╰──────────────── 8 ────────────╯╰──── 4 ────╯╰── 2 ──╯╰─╯╰─╯
+          No internal padding!                                  No trailing padding!
+          (16 is already a multiple of 8 = struct alignment)
+</pre>
+        </div>
+
+        <h3>// <span data-pt="Verificando com pahole e GCC -Wpadded" data-en="Verifying with pahole and GCC -Wpadded">Verificando com <code>pahole</code> e <code>-Wpadded</code></span></h3>
+
+        <div class="code-block">
+            <div class="code-header">
+                <span class="code-filename" data-pt="ferramentas para auditar padding em binários reais" data-en="tools for auditing padding in real binaries">tools for auditing padding in real binaries</span>
+                <span class="code-lang">shell</span>
+            </div>
+<pre><span class="cm"># -Wpadded: compiler warns about every padding byte inserted</span>
+$ gcc -Wpadded -c alignment_demo.c
+alignment_demo.c:7:5: warning: padding struct 'Naive' with 7 bytes to align 'b'
+alignment_demo.c:10:5: warning: padding struct 'Naive' with 1 byte to align 'e'
+alignment_demo.c:11:1: warning: padding struct 'Naive' with 8 bytes at end
+
+<span class="cm"># pahole: reads DWARF debug info and shows exact struct layout</span>
+$ gcc -g alignment_demo.c && pahole ./a.out
+struct Naive {
+    char               a;        /*     0     1 */
+    /* XXX 7 bytes hole, try to pack */
+    double             b;        /*     8     8 */
+    int                c;        /*    16     4 */
+    char               d;        /*    20     1 */
+    /* XXX 1 byte hole, try to pack */
+    short              e;        /*    22     2 */
+    /* size: 32, cachelines: 1, members: 5 */
+    /* sum members: 16, holes: 2, sum holes: 8 */
+    /* padding: 8 */
+    /* last cacheline: 32 bytes */
+};
+
+struct Optimal {
+    double             b;        /*     0     8 */
+    int                c;        /*     8     4 */
+    short              e;        /*    12     2 */
+    char               a;        /*    14     1 */
+    char               d;        /*    15     1 */
+    /* size: 16, cachelines: 1, members: 5 */
+    /* sum members: 16, holes: 0, sum holes: 0 */
+    /* last cacheline: 16 bytes */
+};</pre>
+        </div>
+
+        <div class="callout">
+            <p><strong data-pt="A regra prática definitiva" data-en="The definitive practical rule">// <span data-pt="A regra prática definitiva" data-en="The definitive practical rule">A regra prática definitiva</span></strong></p>
+            <p class="lang-pt">Para qualquer struct que será alocada em grande quantidade
+            (arrays, pools, caches), aplique sempre: <strong style="color:#fff">(1)</strong>
+            ordene membros do maior para o menor alinhamento, <strong style="color:#fff">(2)</strong>
+            agrupe membros do mesmo tipo quando possível, <strong style="color:#fff">(3)</strong>
+            verifique com <code>sizeof()</code> e <code>pahole</code>. Use <code>__packed__</code>
+            ou <code>#pragma pack</code> apenas quando o layout binário exato é um requisito
+            do protocolo — e sempre acesse membros não-alinhados via <code>memcpy()</code>,
+            nunca por dereference direto.</p>
+            <p class="lang-en" style="display:none">For any struct that will be allocated in large
+            quantities (arrays, pools, caches), always apply: <strong style="color:#fff">(1)</strong>
+            order members from largest to smallest alignment, <strong style="color:#fff">(2)</strong>
+            group members of the same type when possible, <strong style="color:#fff">(3)</strong>
+            verify with <code>sizeof()</code> and <code>pahole</code>. Use <code>__packed__</code>
+            or <code>#pragma pack</code> only when the exact binary layout is a protocol
+            requirement — and always access unaligned members via <code>memcpy()</code>,
+            never by direct dereference.</p>
+        </div>
+    </section>
+
+    <div class="post-nav">
+        <a href="../posts.html">
+            <i class='bx bx-arrow-back'></i>
+            <span data-pt="Voltar aos posts" data-en="Back to posts">Voltar aos posts</span>
+        </a>
+        <a href="stack-x86.html">
+            <span data-pt="Ver: A Stack em x86_64 →" data-en="See: The x86_64 Stack →">Ver: A Stack em x86_64 →</span>
+        </a>
+    </div>
+
+</article>
+</main>
+
+<footer>
+    <p>&copy; 2026 Robert Souza Lages.</p>
+</footer>
+
+<script>
+    let currentLang = localStorage.getItem('lang') || 'pt';
+
+    function setLang(lang) {
+        currentLang = lang;
+        localStorage.setItem('lang', lang);
+        document.querySelectorAll('[data-pt], [data-en]').forEach(el => {
+            const val = el.getAttribute('data-' + lang);
+            if (val !== null) el.textContent = val;
+        });
+        document.querySelectorAll('.lang-pt').forEach(el => el.style.display = lang === 'pt' ? '' : 'none');
+        document.querySelectorAll('.lang-en').forEach(el => el.style.display = lang === 'en' ? '' : 'none');
+        document.documentElement.lang = lang === 'pt' ? 'pt-BR' : 'en';
+        document.querySelectorAll('.lang-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.id === 'btn-' + lang);
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        document.body.addEventListener('click', (e) => {
+            const btn = e.target.closest('.lang-btn');
+            if (btn && btn.id) setLang(btn.id.replace('btn-', ''));
+        });
+        const hamburger = document.querySelector('.hamburger');
+        const navLinks  = document.querySelector('.nav-links');
+        if (hamburger) hamburger.addEventListener('click', () => navLinks.classList.toggle('active'));
+        setLang(currentLang);
+    });
+</script>
+
+</body>
+</html>
